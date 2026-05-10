@@ -1,0 +1,84 @@
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Spin The Bottle</title>
+  <link rel="icon" type="image/png" href="./favicon/favicon-96x96.png" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="./favicon/favicon.svg" />
+  <link rel="shortcut icon" href="./favicon/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./favicon/apple-touch-icon.png" />
+  <link rel="manifest" href="./favicon/site.webmanifest" />
+  <script src="https://telegram.org/js/telegram-web-app.js?59"></script>
+  <script type="module" crossorigin src="./assets/index-1776688741387-BUz5E6og.js?v=3"></script>
+  <link rel="modulepreload" crossorigin href="./assets/vendor-1776688741387-ChdSrS24.js?v=3">
+  <link rel="modulepreload" crossorigin href="./assets/pixi-1776688741387-DhpI4S0T.js?v=3">
+  <link rel="stylesheet" crossorigin href="./assets/index-lvMCeiw6.css?v=3">
+</head>
+
+<body>
+  <div id="root"></div>
+  <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516"
+    integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg=="
+    data-cf-beacon='{"version":"2024.11.0","token":"8d9de90fcf4d46a2988e40812835d04c","r":1,"server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}'
+    crossorigin="anonymous"></script>
+
+  <style>
+    .stars-icon,
+    .heart-icon {
+      height: 18px !important;
+      width: 18px !important;
+      max-width: 18px !important;
+      max-height: 18px !important;
+      display: inline-block !important;
+      vertical-align: middle !important;
+      margin: 0 2px !important;
+      object-fit: contain !important;
+      pointer-events: none !important;
+    }
+  </style>
+  <script id="stars-observer">
+    (function () {
+      const targetImg = '/images/stars.png';
+      function replaceStars() {
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+        let node;
+        const nodesToReplace = [];
+        while (node = walker.nextNode()) {
+          if (node.nodeValue.includes('STARS') && !node.parentElement.closest('.stars-replaced')) {
+            nodesToReplace.push(node);
+          }
+        }
+        nodesToReplace.forEach(textNode => {
+          const parent = textNode.parentNode;
+          if (parent && !parent.classList.contains('stars-replaced')) {
+            const span = document.createElement('span');
+            span.className = 'stars-replaced';
+            span.style.display = 'inline-flex';
+            span.style.alignItems = 'center';
+            span.style.verticalAlign = 'middle';
+
+            const parts = textNode.nodeValue.split('STARS');
+            parts.forEach((part, index) => {
+              span.appendChild(document.createTextNode(part));
+              if (index < parts.length - 1) {
+                const img = document.createElement('img');
+                img.src = targetImg;
+                img.className = 'stars-icon';
+                img.style.cssText = 'height:18px !important; width:18px !important; display:inline-block !important; vertical-align:middle !important;';
+                img.width = 18;
+                img.height = 18;
+                img.alt = '★';
+                span.appendChild(img);
+              }
+            });
+            parent.replaceChild(span, textNode);
+          }
+        });
+      }
+      const observer = new MutationObserver((mutations) => {
+        replaceStars();
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+      replaceStars();
+    })();
+  </script>
+</body>

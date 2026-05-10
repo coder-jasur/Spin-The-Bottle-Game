@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="uz">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Siz ban qilindingiz | Spin The Bottle</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0a0c;
+            --accent: #ff3b30;
+            --text: #ffffff;
+            --subtext: #9ca3af;
+            --glass: rgba(255, 255, 255, 0.05);
+            --border: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+            overflow: hidden;
+        }
+
+        /* Animated Background Elements */
+        .bg-glow {
+            position: fixed;
+            width: 300px;
+            height: 300px;
+            background: radial-gradient(circle, var(--accent) 0%, transparent 70%);
+            filter: blur(80px);
+            opacity: 0.15;
+            z-index: -1;
+            animation: move 20s infinite alternate;
+        }
+
+        @keyframes move {
+            from {
+                transform: translate(-50%, -50%);
+            }
+
+            to {
+                transform: translate(50%, 50%);
+            }
+        }
+
+        .container {
+            width: 100%;
+            max-width: 450px;
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border);
+            border-radius: 30px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            position: relative;
+            overflow: hidden;
+            animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .icon-box {
+            width: 80px;
+            height: 80px;
+            background: rgba(255, 59, 48, 0.1);
+            border: 2px solid var(--accent);
+            border-radius: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0 auto 30px;
+            font-size: 40px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.4);
+            }
+
+            70% {
+                box-shadow: 0 0 0 20px rgba(255, 59, 48, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(255, 59, 48, 0);
+            }
+        }
+
+        h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            letter-spacing: -0.5px;
+        }
+
+        p.desc {
+            color: var(--subtext);
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 30px;
+        }
+
+        .info-grid {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 30px;
+            border: 1px solid var(--border);
+        }
+
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .info-item:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+
+        .label {
+            color: var(--subtext);
+            font-size: 14px;
+        }
+
+        .value {
+            font-weight: 600;
+            font-size: 15px;
+        }
+
+        .btn-exit {
+            display: block;
+            width: 100%;
+            padding: 16px;
+            background: var(--accent);
+            color: white;
+            text-decoration: none;
+            border-radius: 15px;
+            font-weight: 700;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+        }
+
+        .btn-exit:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px -5px rgba(255, 59, 48, 0.5);
+            filter: brightness(1.1);
+        }
+
+        .footer-note {
+            margin-top: 25px;
+            font-size: 13px;
+            color: var(--subtext);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="bg-glow" style="top: 20%; left: 20%;"></div>
+    <div class="bg-glow" style="bottom: 20%; right: 20%;"></div>
+
+    <div class="container">
+        <div class="icon-box">🚫</div>
+        <h1>Kirish Taqiqlangan</h1>
+        <p class="desc">Sizning hisobingiz o'yin qoidalarini buzganlik uchun vaqtinchalik cheklangan.</p>
+
+        <div class="info-grid">
+            <div class="info-item">
+                <span class="label">Holat</span>
+                <span class="value" style="color: var(--accent);">Faol Ban</span>
+            </div>
+            <div class="info-item">
+                <span class="label">Ochilish vaqti</span>
+                <span class="value" id="expires-at">Yuklanmoqda...</span>
+            </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+            <a class="btn-exit" href="https://t.me/Od1lov_S">Apellyatsiya berish</a>
+            <button class="btn-exit" style="background: rgba(255,255,255,0.1); border: 1px solid var(--border);"
+                onclick="window.location.href='/'">Bosh sahifaga qaytish</button>
+        </div>
+
+        <div class="footer-note">
+            Agar bu xatolik deb o'ylasangiz, admin bilan bog'laning.
+        </div>
+    </div>
+
+    <script>
+        // URL'dan ma'lumotlarni olish
+        const urlParams = new URLSearchParams(window.location.search);
+        const expiresAt = urlParams.get('expires_at') || 'Noma\'lum';
+        document.getElementById('expires-at').innerText = expiresAt === 'umrbod' ? 'Umrbod' : expiresAt;
+    </script>
+</body>
+
+</html>

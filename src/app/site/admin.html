@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="uz">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Spin The Bottle</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --primary: #3b82f6;
+            --accent: #8b5cf6;
+            --danger: #ef4444;
+            --success: #10b981;
+            --text: #f8fafc;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        .navbar {
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(15px);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo {
+            font-weight: 800;
+            font-size: 1.5rem;
+            background: linear-gradient(to right, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .tabs {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+
+        .tab-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: 0.3s;
+        }
+
+        .tab-btn.active {
+            background: var(--primary);
+            border-color: var(--primary);
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 0 1rem 2rem;
+        }
+
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 1.5rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            margin-bottom: 2rem;
+        }
+
+        h2 {
+            margin-top: 0;
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        /* User Table */
+        .user-list {
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+
+        .user-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            transition: 0.2s;
+        }
+
+        .user-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .complaints-badge {
+            background: var(--danger);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.8rem;
+        }
+
+        .btn {
+            border: none;
+            padding: 10px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            font-family: inherit;
+            transition: 0.3s;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-accent {
+            background: var(--accent);
+            color: white;
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            opacity: 0.9;
+        }
+
+        /* Forms */
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+            opacity: 0.7;
+        }
+
+        input,
+        textarea,
+        select {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 14px;
+            border-radius: 12px;
+            color: white;
+            font-family: inherit;
+            box-sizing: border-box;
+            font-size: 1rem;
+        }
+
+        .alert {
+            padding: 12px;
+            border-radius: 10px;
+            margin-bottom: 1rem;
+            display: none;
+            font-size: 0.9rem;
+        }
+
+        .alert-success {
+            background: var(--success);
+        }
+
+        .alert-error {
+            background: var(--danger);
+        }
+
+        .back-link {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 1.5rem;
+            border-radius: 15px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: var(--primary);
+            margin: 5px 0;
+        }
+
+        .stat-label {
+            font-size: 0.8rem;
+            opacity: 0.7;
+            text-transform: uppercase;
+        }
+
+        .progress-bar-wrap {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.1);
+            height: 8px;
+            border-radius: 4px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: var(--primary);
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav class="navbar">
+        <div class="logo">ADMIN PANEL</div>
+        <a href="/welcome" class="back-link">← Chiqish</a>
+    </nav>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="showTab('dashboard')">📊 Asosiy</button>
+        <button class="tab-btn" onclick="showTab('stats')">📈 Statistika</button>
+        <button class="tab-btn" onclick="showTab('reports')">👥 Foydalanuvchilar</button>
+        <button class="tab-btn" id="admins-tab-btn" onclick="showTab('admins')" style="display: none;">🛡️
+            Adminlar</button>
+    </div>
+
+    <div class="container">
+        <!-- TAB: DASHBOARD -->
+        <div id="dashboard" class="tab-content active">
+            <!-- Balance Form -->
+            <div class="card">
+                <h2>💰 Balans to'ldirish</h2>
+                <div id="balance-alert" class="alert"></div>
+                <div class="form-group">
+                    <label>Foydalanuvchi ID</label>
+                    <input type="number" id="balance-user-id" placeholder="ID kiriting...">
+                </div>
+                <div class="form-group">
+                    <label>Miqdor</label>
+                    <input type="number" id="balance-amount" value="1000">
+                </div>
+                <div class="form-group">
+                    <label>Turi</label>
+                    <select id="balance-currency">
+                        <option value="stars">Stars (Coin)</option>
+                        <option value="hearts">Hearts (Live Balance)</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary" style="width: 100%;" onclick="addBalance()">Qo'shish</button>
+            </div>
+
+            <!-- Broadcast Form -->
+            <div class="card">
+                <h2>📢 Ommaviy xabar</h2>
+                <div id="broadcast-alert" class="alert"></div>
+                <div class="form-group">
+                    <label>Xabar matni</label>
+                    <textarea id="broadcast-text" rows="4"
+                        placeholder="Hamma foydalanuvchilarga yuboriladigan matn..."></textarea>
+                </div>
+                <button class="btn btn-accent" style="width: 100%;" onclick="sendBroadcast()">Xabarni tarqatish</button>
+            </div>
+        </div>
+
+        <!-- TAB: STATS -->
+        <div id="stats" class="tab-content">
+            <div class="card">
+                <h2>📈 Foydalanuvchilar o'sishi</h2>
+                <div class="stats-grid" id="registration-stats">
+                    <!-- Dynamic -->
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>🌍 Top Davlatlar</h2>
+                <div id="country-stats">
+                    <!-- Dynamic -->
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>💎 VIP Statistika</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="vip-count">0</div>
+                        <div class="stat-label">Faol VIP foydalanuvchilar</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB: USERS (Search & Complaints) -->
+        <div id="reports" class="tab-content">
+            <div class="card">
+                <h2>🔍 Foydalanuvchi qidirish</h2>
+                <div id="search-alert" class="alert"></div>
+                <div style="display: flex; gap: 10px; margin-bottom: 1rem;">
+                    <input type="text" id="search-user-input" placeholder="ID yoki Username kiriting..."
+                        style="flex: 1;" onkeypress="if(event.key === 'Enter') searchUser()">
+                    <button class="btn btn-primary" onclick="searchUser()">Qidirish</button>
+                </div>
+            </div>
+
+            <div class="card" id="search-result-card" style="display: none;">
+                <h2 style="margin-bottom: 1rem;">👤 Natija</h2>
+                <div class="user-list" id="search-result-container"></div>
+            </div>
+
+            <div class="card">
+                <h2 style="margin-bottom: 1rem;">🚨 Eng ko'p shikoyat tushganlar (10+)</h2>
+                <div class="user-list" id="complaints-list-container">
+                    <p>Yuklanmoqda...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB: ADMINS (Superadmin only) -->
+        <div id="admins" class="tab-content">
+            <div class="card">
+                <h2>➕ Yangi admin qo'shish</h2>
+                <div id="admin-manage-alert" class="alert"></div>
+                <div class="form-group">
+                    <label>Foydalanuvchi ID yoki Username</label>
+                    <input type="text" id="admin-user-input" placeholder="ID yoki @username...">
+                </div>
+                <div class="form-group">
+                    <label>Roli</label>
+                    <select id="admin-role-input">
+                        <option value="moderator">Moderator (Oddiy admin)</option>
+                        <option value="superadmin">Superadmin (Boshqaruvchi)</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary" style="width: 100%;" onclick="manageAdminAction('add')">Admin qilib
+                    tayinlash</button>
+            </div>
+
+            <div class="card">
+                <h2>🛡️ Joriydagi adminlar</h2>
+                <div class="user-list" id="admin-list-container">
+                    <p>Yuklanmoqda...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showTab(tabId) {
+            // Hide all contents
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            // Remove active from buttons
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+
+            // Show target
+            const target = document.getElementById(tabId);
+            if (target) target.classList.add('active');
+
+            // Find which button to activate
+            if (tabId === 'dashboard') document.querySelectorAll('.tab-btn')[0].classList.add('active');
+            else if (tabId === 'stats') document.querySelectorAll('.tab-btn')[1].classList.add('active');
+            else if (tabId === 'reports') document.querySelectorAll('.tab-btn')[2].classList.add('active');
+            else if (tabId === 'admins') document.getElementById('admins-tab-btn').classList.add('active');
+
+            if (tabId === 'stats') loadStats();
+            if (tabId === 'reports') loadComplaints();
+            if (tabId === 'admins') loadAdmins();
+        }
+
+        // User Search
+        async function searchUser() {
+            const query = document.getElementById('search-user-input').value;
+            const alert = document.getElementById('search-alert');
+            const resultCard = document.getElementById('search-result-card');
+            const container = document.getElementById('search-result-container');
+
+            if (!query) return;
+
+            alert.style.display = 'none';
+            resultCard.style.display = 'none';
+            container.innerHTML = '<p>Izlanmoqda...</p>';
+            resultCard.style.display = 'block';
+
+            try {
+                const res = await fetch(`/api/admin/search_user?query=${encodeURIComponent(query)}`);
+                const data = await res.json();
+
+                if (!data.success) {
+                    container.innerHTML = `<p style="color: var(--danger);">${data.message}</p>`;
+                    return;
+                }
+
+                const u = data.user;
+                container.innerHTML = `
+                    <div class="user-item">
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <img src="${u.avatar}" style="width: 50px; height: 50px; border-radius: 10px; object-fit: cover; border: 1px solid rgba(255,255,255,0.1);">
+                            <div>
+                                <strong>${u.username}</strong> 
+                                ${u.complaints > 0 ? `<span style="color: var(--danger); font-size: 0.8rem; font-weight: bold;">(${u.complaints} shikoyat)</span>` : ''} 
+                                ${u.is_banned ? `<span class="complaints-badge">BANNED</span>` : ''}
+                                <br>
+                                <small>ID: ${u.id} | ${u.country || 'Noma\'lum'}</small>
+                            </div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 5px; align-items: flex-end;">
+                            ${u.is_banned
+                        ? `<button class="btn btn-success" style="background: var(--success); color: white; padding: 4px 8px; font-size: 0.75rem;" onclick="quickBanAction(${u.id}, 'unban')">Blokdan ochish</button>`
+                        : `
+                                <div style="display: flex; gap: 5px;">
+                                    <select id="ban-dur-${u.id}" style="padding: 2px; font-size: 0.7rem; background: #222; color: white; border: 1px solid #444; border-radius: 4px;">
+                                        <option value="1">1 kun</option>
+                                        <option value="7">1 hafta</option>
+                                        <option value="15">15 kun</option>
+                                        <option value="30">1 oy</option>
+                                        <option value="forever">Umrbod</option>
+                                    </select>
+                                    <button class="btn btn-danger" style="padding: 4px 8px; font-size: 0.75rem;" onclick="quickBanAction(${u.id}, 'ban')">Bloklash</button>
+                                </div>`
+                    }
+                        </div>
+                    </div>
+                `;
+            } catch (err) {
+                container.innerHTML = '<p>Xatolik yuz berdi</p>';
+            }
+        }
+
+        async function loadComplaints() {
+            const container = document.getElementById('complaints-list-container');
+            try {
+                const res = await fetch('/api/admin/users/complaints');
+                const users = await res.json();
+
+                if (users.length === 0) {
+                    container.innerHTML = '<p>Hozircha ko\'p shikoyat tushganlar yo\'q.</p>';
+                    return;
+                }
+
+                container.innerHTML = users.map(u => `
+                    <div class="user-item">
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <img src="${u.avatar}" style="width: 40px; height: 40px; border-radius: 8px;">
+                            <div>
+                                <strong>${u.username}</strong> <span style="color: var(--danger); font-size: 0.8rem;">(${u.complaints} shikoyat)</span><br>
+                                <small>ID: ${u.id} | ${u.country || 'Noma\'lum'}</small>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 5px;">
+                            ${u.is_banned ? '<span class="complaints-badge">BANNED</span>' : `
+                                <select id="ban-dur-${u.id}" style="padding: 2px; font-size: 0.7rem; background: #222; color: white; border: 1px solid #444; border-radius: 4px;">
+                                    <option value="1">1 kun</option>
+                                    <option value="7">1 hafta</option>
+                                    <option value="15">15 kun</option>
+                                    <option value="30">1 oy</option>
+                                    <option value="forever">Umrbod</option>
+                                </select>
+                                <button class="btn btn-danger" style="padding: 4px 8px; font-size: 0.75rem;" onclick="quickBanAction(${u.id}, 'ban')">Bloklash</button>
+                            `}
+                        </div>
+                    </div>
+                `).join('');
+            } catch (err) {
+                container.innerHTML = '<p>Yuklashda xatolik</p>';
+            }
+        }
+
+        async function quickBanAction(id, action) {
+            const duration = action === 'ban' ? document.getElementById(`ban-dur-${id}`).value : null;
+            try {
+                const res = await fetch('/api/admin/ban', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: id, action, duration })
+                });
+                const result = await res.json();
+                alert(result.message);
+                if (result.success) {
+                    searchUser(); // reload search result if visible
+                    loadComplaints(); // reload complaints list
+                }
+            } catch (err) {
+                alert('Tizim xatoligi yuz berdi');
+            }
+        }
+
+
+        function fillIdAndSwitch(id) {
+            document.getElementById('balance-user-id').value = id;
+            showTab('dashboard');
+            // Focus on amount after a short delay to allow tab switch animation
+            setTimeout(() => document.getElementById('balance-amount').focus(), 100);
+        }
+
+        async function addBalance() {
+            const userId = document.getElementById('balance-user-id').value;
+            const amount = document.getElementById('balance-amount').value;
+            const currency = document.getElementById('balance-currency').value;
+            const alert = document.getElementById('balance-alert');
+
+            if (!userId) {
+                alert.innerText = 'IDni kiriting';
+                alert.className = 'alert alert-error';
+                alert.style.display = 'block';
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/admin/add-balance', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: parseInt(userId), amount: parseInt(amount), currency })
+                });
+                const result = await res.json();
+
+                alert.innerText = result.message;
+                alert.className = result.success ? 'alert alert-success' : 'alert alert-error';
+                alert.style.display = 'block';
+
+                if (result.success) {
+                    document.getElementById('balance-user-id').value = '';
+                }
+            } catch (err) {
+                alert.innerText = 'Xatolik yuz berdi';
+                alert.style.display = 'block';
+            }
+        }
+
+        async function sendBroadcast() {
+            const text = document.getElementById('broadcast-text').value;
+            const alert = document.getElementById('broadcast-alert');
+
+            if (!text) return;
+
+            try {
+                const res = await fetch('/api/admin/broadcast', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text })
+                });
+                const result = await res.json();
+
+                alert.innerText = result.message;
+                alert.className = result.success ? 'alert alert-success' : 'alert alert-error';
+                alert.style.display = 'block';
+
+                if (result.success) document.getElementById('broadcast-text').value = '';
+            } catch (err) {
+                alert.innerText = 'Xatolik yuz berdi';
+                alert.style.display = 'block';
+            }
+        }
+
+        // --- Stats ---
+        async function loadStats() {
+            try {
+                const res = await fetch('/api/admin/stats');
+                const data = await res.json();
+
+                // Registrations
+                const regContainer = document.getElementById('registration-stats');
+                const intervals = [
+                    { label: 'Bugun', value: data.day },
+                    { label: 'Shu hafta', value: data.week },
+                    { label: 'Shu oy', value: data.month },
+                    { label: 'Shu yil', value: data.year },
+                    { label: 'Jami', value: data.total }
+                ];
+                regContainer.innerHTML = intervals.map(i => `
+                    <div class="stat-card">
+                        <div class="stat-value">${i.value}</div>
+                        <div class="stat-label">${i.label}</div>
+                    </div>
+                `).join('');
+
+                // VIP
+                document.getElementById('vip-count').innerText = data.active_vip;
+
+                // Helper for country flags
+                const getFlagEmoji = (countryCode) => {
+                    if (!countryCode || countryCode.length !== 2) return '🌍';
+                    const codePoints = countryCode.toUpperCase().split('').map(char => 127397 + char.charCodeAt(0));
+                    return String.fromCodePoint(...codePoints);
+                };
+
+                // Countries
+                const countryContainer = document.getElementById('country-stats');
+                const max = data.countries[0]?.count || 1;
+                countryContainer.innerHTML = data.countries.map(c => `
+                    <div style="margin-bottom: 15px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+                            <span>${getFlagEmoji(c.name)} ${c.name || 'Noma\'lum'}</span>
+                            <span style="font-weight: 600;">${c.count}</span>
+                        </div>
+                        <div class="progress-bar-wrap">
+                            <div class="progress-bar" style="width: ${(c.count / max * 100)}%"></div>
+                        </div>
+                    </div>
+                `).join('');
+
+            } catch (err) {
+                console.error('Stats error:', err);
+            }
+        }
+
+        // --- Admin Management ---
+        async function checkRole() {
+            try {
+                const res = await fetch('/api/admin/check');
+                const data = await res.json();
+                if (data.is_admin && data.role === 'superadmin') {
+                    document.getElementById('admins-tab-btn').style.display = 'block';
+                }
+            } catch (e) { }
+        }
+
+        async function loadAdmins() {
+            const container = document.getElementById('admin-list-container');
+            try {
+                const res = await fetch('/api/admin/list');
+                const admins = await res.json();
+
+                container.innerHTML = admins.map(a => `
+                    <div class="user-item">
+                        <div>
+                            <strong>${a.username}</strong> <br>
+                            <small>ID: ${a.user_id} | Roli: <span style="color: ${a.role === 'superadmin' ? 'var(--accent)' : 'var(--primary)'}">${a.role}</span></small>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            ${a.role === 'moderator' ? `<button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.8rem;" onclick="manageAdminAction('update_role', ${a.user_id}, 'superadmin')">Promote</button>` : ''}
+                            ${a.role === 'superadmin' && a.user_id != 1 ? `<button class="btn btn-accent" style="padding: 6px 12px; font-size: 0.8rem;" onclick="manageAdminAction('update_role', ${a.user_id}, 'moderator')">Demote</button>` : ''}
+                            <button class="btn btn-danger" style="padding: 6px 12px; font-size: 0.8rem;" onclick="manageAdminAction('delete', ${a.user_id})">O'chirish</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (err) {
+                container.innerHTML = '<p>Adminlar ro\'yxatini yuklab bo\'lmadi</p>';
+            }
+        }
+
+        async function manageAdminAction(action, userId = null, role = null) {
+            const input = document.getElementById('admin-user-input').value;
+            const roleInput = document.getElementById('admin-role-input').value;
+            const alert = document.getElementById('admin-manage-alert');
+
+            let payload = { action };
+
+            if (userId) {
+                payload.user_id = userId;
+                if (role) payload.role = role;
+            } else {
+                if (!input) return;
+                if (input.startsWith('@') || isNaN(input)) {
+                    payload.username = input;
+                } else {
+                    payload.user_id = parseInt(input);
+                }
+                payload.role = roleInput;
+            }
+
+            try {
+                const res = await fetch('/api/admin/manage', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await res.json();
+
+                alert.innerText = result.message;
+                alert.className = result.success ? 'alert alert-success' : 'alert alert-error';
+                alert.style.display = 'block';
+
+                if (result.success) {
+                    document.getElementById('admin-user-input').value = '';
+                    loadAdmins();
+                }
+            } catch (err) {
+                alert.innerText = 'Xatolik yuz berdi';
+                alert.style.display = 'block';
+            }
+        }
+
+        // Initialize
+        checkRole();
+    </script>
+</body>
+
+</html>
