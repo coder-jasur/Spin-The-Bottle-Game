@@ -83,8 +83,16 @@ async def get_index(request: Request, session: AsyncSession = Depends(get_db)):
                         payload = {"id": uid}
                     except (ValueError, TypeError):
                         pass
-        except: pass
-    
+        except Exception:
+            pass
+
+    if not payload and token:
+        from src.app.api.game_session import game_sessions
+
+        uid_game = game_sessions.verify(token.strip())
+        if uid_game is not None:
+            payload = {"id": uid_game}
+
     if not payload:
         print(">>> AUTH ERROR: No valid token found. Redirecting to login.", flush=True)
         return RedirectResponse(url="/")
@@ -219,23 +227,24 @@ async def get_manifest():
     return FileResponse(site_dir / "site.webmanifest")
 @router.get("/api/tables")
 async def get_tables(country: str = "UZBEKISTAN", session: AsyncSession = Depends(get_db)):
-    """Stol ro'yxati UI uchun (Diagramma 6 & Request 2)."""
+    """Stol ro'yxati UI uchun — davlat + global, qadam-baqadam ochilish."""
     from src.app.database.repositories.game import GameRepository
     from src.app.api.ws.game_manager import manager
-    
+
     repo = GameRepository(session)
-    rooms = await repo.get_rooms_by_country(country)
-    
-    result = []
-    for r in rooms:
-        table_obj = manager.tables.get(str(r.room_id))
-        online_count = len(table_obj.players) if table_obj else 0
-        
-        result.append({
-            "room_id":  r.room_id,
-            "name":     r.name,
-            "online":   online_count,
-            "capacity": 12,
-            "is_vip":   r.is_vip
-        })
-    return result
+    await repo.seed_country_tables(country)
+    await repo.seed_global_tables()
+
+    rows = await manager.http_tables_list_payload(country)
+    return [
+        {
+            "room_id": r["room_id"],
+            "name": r["name"],
+            "online": r["online"],
+            "capacity": r["capacity"],
+            "is_vip": r["is_vip"],
+            "country": r["country"],
+            "scope": r["scope"],
+        }
+        for r in rows
+    ]

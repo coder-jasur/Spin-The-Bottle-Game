@@ -2492,6 +2492,72 @@ body {
     z-index: 999
 }
 
+.music-quick-actions {
+    align-items: stretch;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    position: absolute;
+    right: 10px;
+    top: 56px;
+    z-index: 998
+}
+
+.music-quick-btn {
+    align-items: center;
+    border: none;
+    border-radius: 999px;
+    box-shadow: 0 4px 14px #00000040;
+    cursor: pointer;
+    display: inline-flex;
+    flex-direction: row;
+    font-family: Poppins, system-ui, sans-serif;
+    gap: 10px;
+    justify-content: flex-start;
+    min-width: 188px;
+    padding: 10px 18px 10px 14px;
+    transition: transform .15s ease, box-shadow .18s ease
+}
+
+.music-quick-btn:hover {
+    box-shadow: 0 6px 20px #00000055;
+    transform: translateY(-2px)
+}
+
+.music-quick-btn:active {
+    transform: translateY(0)
+}
+
+.music-quick-btn img {
+    display: block;
+    flex-shrink: 0;
+    filter: brightness(0) invert(1);
+    height: 28px;
+    width: 28px
+}
+
+.music-quick-btn__label {
+    color: #fff;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-shadow: 0 1px 2px #00000059;
+    white-space: nowrap
+}
+
+.music-quick-btn--youtube {
+    background: linear-gradient(135deg, #312e81 0%, #5b21b6 40%, #7c3aed 75%, #9333ea)
+}
+
+.music-quick-btn--top {
+    background: linear-gradient(135deg, #be185d 0%, #db2777 35%, #ec4899 70%, #f43f5e)
+}
+
+.bottle-game-chat.dark-theme .music-quick-btn--youtube,
+.bottle-game-chat.dark-theme .music-quick-btn--top {
+    box-shadow: 0 4px 16px #00000059
+}
+
 .track-image {
     border-radius: 50%;
     height: 36px;
@@ -3024,6 +3090,33 @@ body {
     z-index: 1
 }
 
+.bottle-game-canvas-area {
+    height: 62%;
+    pointer-events: auto;
+    position: relative;
+    width: 100%;
+    z-index: 2
+}
+
+.bottle-game-canvas-wrapper {
+    border-radius: 8px;
+    box-shadow: 0 4px 8px #0000004d;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+    position: relative;
+    width: 100%;
+    z-index: 1
+}
+
+.bottle-game-canvas-wrapper .bottle-game-canvas {
+    border-radius: inherit;
+    box-shadow: none;
+    height: 100%;
+    pointer-events: auto;
+    width: 100%
+}
+
 .bottle-game-canvas {
     border-radius: 8px;
     box-shadow: 0 4px 8px #0000004d;
@@ -3032,6 +3125,28 @@ body {
     position: relative;
     width: 100%;
     z-index: 1
+}
+
+.music-quick-actions.music-quick-actions--canvas {
+    align-items: center;
+    bottom: max(18px, env(safe-area-inset-bottom, 0));
+    flex-direction: column;
+    gap: 12px;
+    left: 50%;
+    pointer-events: auto;
+    position: absolute;
+    right: auto;
+    top: auto;
+    transform: translateX(-50%);
+    width: min(calc(100% - 32px), 280px);
+    z-index: 30
+}
+
+.music-quick-actions.music-quick-actions--canvas .music-quick-btn {
+    justify-content: flex-start;
+    min-width: 0;
+    pointer-events: auto;
+    width: 100%
 }
 
 .icon-buttons {

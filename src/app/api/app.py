@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from src.app.core.config import load_config
+from src.app.core.room_policy import DEFAULT_SEED_COUNTRY_CODES
 from src.app.database.base import Database
 
 # Barcha modellar import — create_all ishlashi uchun shart
@@ -21,6 +22,7 @@ from src.app.database.models.relation    import UserRelation  # noqa
 from src.app.database.models.stats       import UserStats  # noqa
 from src.app.database.models.story       import Story, StoryLike, StoryView  # noqa
 from src.app.database.models.table       import TableRoom  # noqa
+from src.app.database.models.table_chat  import TableChatMessage  # noqa
 from src.app.database.models.transaction import Transaction  # noqa
 from src.app.database.models.user        import User  # noqa
 from src.app.database.models.wallet      import Wallet  # noqa
@@ -45,7 +47,7 @@ async def lifespan(app: FastAPI):
     async with db.session_factory() as session:
         from src.app.database.repositories.game import GameRepository
         repo = GameRepository(session)
-        for country in ["UZBEKISTAN", "KAZAKHSTAN", "RUSSIA", "ALL"]:
+        for country in DEFAULT_SEED_COUNTRY_CODES:
             try:
                 await repo.ensure_base_rooms(country, min_count=5)
             except Exception as e:
@@ -107,20 +109,44 @@ for folder in ["static", "libs", "assets", "favicon"]:
         app.mount(f"/{folder}", StaticFiles(directory=str(path)), name=folder)
 
 
-# ── JSON fayllar ─────────────────────────────────────────────────────────
+# ── JSON fayllar (katalog o'zgarganda brauzer eski assets.json ni ushlab qolmasin) ──
+_ASSETS_NO_CACHE = {"Cache-Control": "no-store, max-age=0, must-revalidate"}
+
+
 @app.get("/assets.json")
 async def get_assets_json():
-    return FileResponse(site_dir / "assets.json")
+    return FileResponse(site_dir / "assets.json", headers=_ASSETS_NO_CACHE)
 
 
 @app.get("/server.json")
 async def get_server_json():
-    return FileResponse(site_dir / "server.json")
+    return FileResponse(site_dir / "server.json", headers=_ASSETS_NO_CACHE)
 
 
 @app.get("/favicon.ico")
 async def favicon():
     return FileResponse(site_dir / "favicon" / "favicon.ico")
+
+
+@app.get("/favicon-96x96.png")
+async def favicon_96_png():
+    """welcome.html — ildizda /favicon-96x96.png; fayl `site/favicon/` ichida bo‘lishi kerak."""
+    for name in ("favicon-96x96.png", "favicon.png"):
+        path = site_dir / "favicon" / name
+        if path.is_file():
+            return FileResponse(path)
+    raise HTTPException(
+        status_code=404,
+        detail="site/favicon/ ichida favicon-96x96.png yoki favicon.png qo‘ying",
+    )
+
+
+@app.get("/favicon.svg")
+async def favicon_svg_root():
+    path = site_dir / "favicon" / "favicon.svg"
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="site/favicon/favicon.svg topilmadi")
+    return FileResponse(path)
 
 
 # ── Routerlar ─────────────────────────────────────────────────────────────
@@ -134,6 +160,7 @@ from src.app.api.auth.register       import router as register_router # noqa
 from src.app.api.auth.verify         import router as verify_router   # noqa
 from src.app.api.config              import router as config_router   # noqa
 from src.app.api.frames              import router as frames_router   # noqa
+from src.app.api.music               import router as music_router     # noqa
 from src.app.api.live                import router as live_router     # noqa
 from src.app.api.proxy               import router as proxy_router    # noqa
 from src.app.api.stories.router      import router as stories_router  # noqa
@@ -152,6 +179,7 @@ app.include_router(logout_router)
 app.include_router(stories_router)
 app.include_router(verify_router)
 app.include_router(frames_router)
+app.include_router(music_router)
 app.include_router(live_router)
 app.include_router(tables_router)   # ← yangi qo'shildi
 app.include_router(proxy_router)
@@ -171,7 +199,7 @@ async def rum_handler():
 @app.get("/bottle/bundle/{folder}/{filename}")
 @app.get("/bottle/bundle/{folder}/{subfolder}/{filename}")
 async def smart_asset_handler(folder: str, filename: str, subfolder: str = None):
-    if folder in ["api", "ws"]:
+    if folder in ["api", "ws", "api_music"]:
         return Response(status_code=404)
 
     actual_subfolder = subfolder or "others"
