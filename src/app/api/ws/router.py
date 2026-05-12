@@ -1,9 +1,11 @@
 """
 WebSocket Router — to'liq tuzatilgan va kengaytirilgan versiya.
 """
+import json
 import logging
-import traceback
 import random
+import traceback
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from src.app.api.ws.game_manager import GameManager
@@ -12,9 +14,107 @@ from src.app.core.jwt import verify_access_token
 
 router = APIRouter(tags=["Game WebSocket"])
 log = logging.getLogger("spinbottle")
+log.setLevel(logging.INFO)
 
 # Singleton manager
 manager = GameManager()
+
+
+def _incoming_is_plain_json(raw: bytes) -> bool:
+    """main.be3d9225.js kabi klientlar to'g'ridan-to'g'ri JSON yuboradi (wrap qilinmagan)."""
+    if not raw:
+        return False
+    payload = raw if raw[0] == 123 else raw[2:]
+    try:
+        o = json.loads(payload.decode("utf-8"))
+        return isinstance(o, dict) and "data" not in o
+    except Exception:
+        return False
+
+
+def _user_id_from_token(token: str | None) -> int | None:
+    """`token` → DB user_id. Sessiya tokeni yoki JWT bo'lishi mumkin."""
+    if not token:
+        return None
+    try:
+        from src.app.api.game_session import game_sessions
+
+        uid = game_sessions.verify(token)
+        if uid:
+            return int(uid)
+    except Exception as ex:
+        log.error(f"Session verify xatosi: {ex}")
+    try:
+        payload = verify_access_token(token)
+        if payload and payload.get("id"):
+            return int(payload["id"])
+    except Exception as ex:
+        log.error(f"JWT verify xatosi: {ex}")
+    return None
+
+
+def _user_id_from_ws_cookies(ws: WebSocket) -> int | None:
+    """Cookie'dagi JWT tokenlardan DB user_id ni aniqlash (zaxira yo'l).
+
+    Server restart bo'lganda RAM'dagi sessiya tokeni yo'qoladi — bu yerda
+    `accessToken` / `device_user_ids` cookie'sidagi JWT'dan foydalanuvchini
+    qaytarib olamiz, shunda foydalanuvchi `mehmon` bo'lib qolmaydi.
+    """
+    cookies = ws.cookies or {}
+    for name in ("accessToken", "device_user_ids", "refreshToken"):
+        raw = cookies.get(name)
+        if not raw:
+            continue
+        try:
+            payload = verify_access_token(raw)
+        except Exception:
+            payload = None
+        if payload and payload.get("id"):
+            try:
+                return int(payload["id"])
+            except (TypeError, ValueError):
+                pass
+        # `device_user_ids` ba'zan `["123"]` ko'rinishida bo'ladi
+        try:
+            import json as _json
+            import urllib.parse as _urllib
+
+            decoded = _urllib.unquote(raw)
+            if decoded.startswith("["):
+                arr = _json.loads(decoded)
+                if isinstance(arr, list) and arr:
+                    return int(arr[0])
+        except (ValueError, TypeError, _json.JSONDecodeError):
+            pass
+    return None
+
+
+def _resolve_user_from_token(
+    token: str, ws: WebSocket | None = None
+) -> tuple[str, int | None]:
+    """JWT / session token (+ ixtiyoriy WS cookie) → (user_id_str, db_uid_or_None)."""
+    uid_int = _user_id_from_token(token)
+    if uid_int:
+        log.info(f"WS token resolved: user_id={uid_int}")
+        return str(uid_int), uid_int
+
+    # Cookie zaxirasi: server restart yoki eskirgan sessiya tokeni
+    if ws is not None:
+        cookie_uid = _user_id_from_ws_cookies(ws)
+        if cookie_uid:
+            try:
+                from src.app.api.game_session import game_sessions
+
+                game_sessions.create(cookie_uid)
+            except Exception as ex:
+                log.debug(f"cookie recover session create: {ex}")
+            log.info(f"WS cookie recovered: user_id={cookie_uid}")
+            return str(cookie_uid), cookie_uid
+
+    guest_num = random.randint(10000, 99999)
+    guest_id = f"guest_{guest_num}"
+    log.warning(f"Guest sifatida kirdi: {guest_id} (token yaroqsiz)")
+    return guest_id, None
 
 
 @router.websocket("/ws/")
@@ -22,6 +122,7 @@ async def game_websocket(ws: WebSocket):
     """
     Asosiy WebSocket handler.
     Barcha paketlarni manager.handle() ga yo'naltiradi.
+    HTML5: ?token=...&table_id=... query bilan ulanadi (xabar ketmaydi).
     """
     await ws.accept(subprotocol="binary")
 
@@ -30,55 +131,68 @@ async def game_websocket(ws: WebSocket):
         manager.set_db_factory(ws.app.state.db.session_factory)
 
     user_id: str | None = None
-    table_id: str = "1003"
+    table_id: str = "1"
 
     try:
-        async for raw in ws.iter_bytes():
+        # ── HTML5: URL token bilan darhol sessiya ─────────────────────────
+        qp_token = ws.query_params.get("token")
+        qp_room = (
+            ws.query_params.get("table_id")
+            or ws.query_params.get("tableId")
+            or "1"
+        )
+        if qp_token:
+            table_id = str(qp_room)
+            uid_str, uid_int = _resolve_user_from_token(qp_token, ws)
+            user_id = uid_str
+            player = await manager.connect(ws, table_id, user_id)
+            if not player:
+                return
+            player.plain_ws = True
+            if uid_int:
+                player.session_token = qp_token
+            tbl = manager.tables[table_id]
+            await manager._handle_login(
+                ws,
+                tbl,
+                player,
+                {"type": "login", "id": qp_token, "room_id": table_id},
+            )
+
+        while True:
+            message = await ws.receive()
+            if message["type"] == "websocket.disconnect":
+                break
+            raw: bytes | None = None
+            if message.get("bytes") is not None:
+                raw = message["bytes"]
+            elif message.get("text") is not None:
+                raw = message["text"].encode("utf-8")
+            if not raw:
+                continue
+
             packet = parse_packet(raw)
             if not packet:
                 continue
 
             ptype = packet.get("type", "unknown")
 
-            # ── LOGIN ──────────────────────────────────────────────────────
+            # ── LOGIN (faqat query-token yo'lidan kelmaganda) ───────────────
             if ptype == "login":
+                if user_id:
+                    await manager.handle(ws, packet)
+                    continue
+
                 token = packet.get("id", "")
-                uid_int: int | None = None
+                uid_str, uid_int = _resolve_user_from_token(token, ws)
+                user_id = uid_str
 
-                # 1) Sessiya token tekshirish
-                try:
-                    from src.app.api.game_session import game_sessions
-                    uid_int = game_sessions.verify(token)
-                    if uid_int:
-                        user_id = str(uid_int)
-                        log.info(f"SESSION token: user_id={user_id}")
-                except Exception as ex:
-                    log.error(f"Session verify xatosi: {ex}")
+                table_id = str(packet.get("room_id", "1"))
 
-                # 2) JWT token tekshirish (zapas)
-                if not uid_int:
-                    try:
-                        payload = verify_access_token(token)
-                        if payload and payload.get("id"):
-                            uid_int = int(payload["id"])
-                            user_id = str(uid_int)
-                            log.info(f"JWT token: user_id={user_id}")
-                    except Exception as ex:
-                        log.error(f"JWT verify xatosi: {ex}")
-
-                # 3) Guest fallback
-                if not user_id or not uid_int:
-                    guest_num = random.randint(10000, 99999)
-                    user_id = f"guest_{guest_num}"
-                    log.warning(f"Guest sifatida kirdi: {user_id}")
-
-                # Room ID aniqlash
-                table_id = str(packet.get("room_id", "1003"))
-
-                # Manager ga ulash va login bajarish
                 player = await manager.connect(ws, table_id, user_id)
-
-                # Sessiya tokenni player ga saqlash
+                if not player:
+                    return
+                player.plain_ws = _incoming_is_plain_json(raw)
                 if uid_int:
                     player.session_token = token
 

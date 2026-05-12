@@ -1,85 +1,175 @@
-<!DOCTYPE html>
-<html lang="uz">
+<!doctype html>
+<html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Panel - Spin The Bottle</title>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="shortcut icon" href="/favicon-96x96.png" />
+    <meta name="viewport"
+        content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+    <meta name="theme-color" content="#3d4f64" />
+    <meta name="google" content="notranslate" />
+    <title>Spin The Bottle — Admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap" rel="stylesheet" />
     <style>
+        /* Yumshoq to‘q fon (qora emas), glass + Poppins + issiq CTA */
         :root {
-            --bg-color: #0f172a;
-            --card-bg: rgba(30, 41, 59, 0.7);
-            --primary: #3b82f6;
-            --accent: #8b5cf6;
-            --danger: #ef4444;
-            --success: #10b981;
-            --text: #f8fafc;
+            --page-bg-a: #3a4a5f;
+            --page-bg-b: #2f3d4f;
+            --page-bg-c: #283545;
+            --glass: rgba(255, 255, 255, 0.11);
+            --glass-border: rgba(255, 255, 255, 0.16);
+            --glass-hover: rgba(255, 255, 255, 0.2);
+            --field-bg: rgba(30, 42, 58, 0.55);
+            --field-bg-focus: rgba(30, 42, 58, 0.72);
+            --warm-a: #f2b37b;
+            --warm-b: #e29a5f;
+            --warm-hover-a: #ffc48c;
+            --warm-hover-b: #f2a96f;
+            --text: #f4f6f9;
+            --muted: rgba(255, 255, 255, 0.78);
+            --danger: #e85555;
+            --success: #3ecf8e;
+            --accent: #d4c4f5;
+            --primary: #f2b37b;
+            --pill-text: #1a120e;
+        }
+
+        * {
+            box-sizing: border-box;
         }
 
         body {
             margin: 0;
-            padding: 0;
-            font-family: 'Outfit', sans-serif;
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-            color: var(--text);
             min-height: 100vh;
+            font-family: Poppins, sans-serif;
+            color: var(--text);
+            background: linear-gradient(165deg, var(--page-bg-a) 0%, var(--page-bg-b) 45%, var(--page-bg-c) 100%);
+            background-attachment: fixed;
+            -webkit-font-smoothing: antialiased;
         }
 
         .navbar {
-            background: rgba(15, 23, 42, 0.8);
-            backdrop-filter: blur(15px);
-            padding: 1rem 2rem;
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            justify-content: space-between;
+            padding: 12px 16px calc(12px + env(safe-area-inset-top));
+            padding-top: calc(12px + env(safe-area-inset-top));
+            background: var(--glass);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border-bottom: 0.5px solid var(--glass-border);
+            box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
             position: sticky;
             top: 0;
             z-index: 100;
         }
 
         .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 700;
+            font-size: 15px;
+            letter-spacing: 0.01em;
+        }
+
+        .logo .brand {
+            width: 40px;
+            height: 40px;
+            object-fit: contain;
+            border-radius: 10px;
+        }
+
+        .logo-titles {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            line-height: 1.2;
+        }
+
+        .logo-title {
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        .logo-sub {
+            font-size: 11px;
+            font-weight: 400;
+            color: var(--muted);
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 11px 16px;
+            border-radius: 999px;
             font-weight: 800;
-            font-size: 1.5rem;
-            background: linear-gradient(to right, #60a5fa, #a78bfa);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            font-size: 13px;
+            color: var(--pill-text);
+            text-decoration: none;
+            font-family: Poppins, sans-serif;
+            background: linear-gradient(180deg, var(--warm-a), var(--warm-b));
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+            transition: all 0.2s ease;
+        }
+
+        .back-link:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.48);
+            background: linear-gradient(180deg, var(--warm-hover-a), var(--warm-hover-b));
         }
 
         .tabs {
             display: flex;
+            flex-wrap: wrap;
             justify-content: center;
-            gap: 1rem;
-            margin: 1.5rem 0;
+            gap: 10px;
+            padding: 16px 12px 10px;
+            max-width: 900px;
+            margin: 0 auto;
         }
 
         .tab-btn {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: white;
-            padding: 10px 20px;
-            border-radius: 12px;
+            border: 0.5px solid var(--glass-border);
+            background: var(--glass);
+            color: var(--text);
+            padding: 10px 16px;
+            border-radius: 10px;
             cursor: pointer;
-            font-weight: 600;
-            transition: 0.3s;
+            font-weight: 700;
+            font-size: 13px;
+            font-family: inherit;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
+            transition: all 0.2s ease;
+        }
+
+        .tab-btn:hover {
+            background: var(--glass-hover);
+            border-color: rgba(255, 255, 255, 0.3);
+            transform: translateY(-1px);
         }
 
         .tab-btn.active {
-            background: var(--primary);
-            border-color: var(--primary);
-            box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+            background: linear-gradient(180deg, var(--warm-a), var(--warm-b));
+            color: var(--pill-text);
+            border-color: transparent;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
         }
 
         .container {
-            max-width: 800px;
+            max-width: 820px;
             margin: 0 auto;
-            padding: 0 1rem 2rem;
+            padding: 8px 16px calc(28px + env(safe-area-inset-bottom));
         }
 
         .tab-content {
             display: none;
-            animation: fadeIn 0.3s ease;
+            animation: fadeIn 0.25s ease;
         }
 
         .tab-content.active {
@@ -89,7 +179,7 @@
         @keyframes fadeIn {
             from {
                 opacity: 0;
-                transform: translateY(10px);
+                transform: translateY(8px);
             }
 
             to {
@@ -99,22 +189,25 @@
         }
 
         .card {
-            background: var(--card-bg);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 20px;
-            padding: 1.5rem;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-            margin-bottom: 2rem;
+            background: var(--glass);
+            border: 0.5px solid var(--glass-border);
+            border-radius: 10px;
+            padding: 16px 16px 18px;
+            margin-bottom: 14px;
+            box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
         }
 
-        h2 {
-            margin-top: 0;
-            font-size: 1.2rem;
-            opacity: 0.9;
+        .card h2 {
+            margin: 0 0 14px;
+            padding-bottom: 10px;
+            font-size: 16px;
+            font-weight: 700;
+            border-bottom: 0.5px solid var(--glass-border);
+            color: var(--text);
         }
 
-        /* User Table */
         .user-list {
             max-height: 70vh;
             overflow-y: auto;
@@ -124,141 +217,189 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 1rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-            transition: 0.2s;
+            padding: 12px 0;
+            border-bottom: 0.5px solid rgba(255, 255, 255, 0.06);
+            gap: 10px;
         }
 
         .user-item:hover {
-            background: rgba(255, 255, 255, 0.05);
+            background: rgba(255, 255, 255, 0.03);
         }
 
         .complaints-badge {
             background: var(--danger);
             padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 0.8rem;
+            border-radius: 8px;
+            font-size: 0.75rem;
+            font-weight: 700;
         }
 
         .btn {
             border: none;
-            padding: 10px 20px;
+            padding: 11px 18px;
             border-radius: 10px;
             cursor: pointer;
-            font-weight: 600;
+            font-weight: 700;
+            font-size: 14px;
             font-family: inherit;
-            transition: 0.3s;
+            transition: all 0.2s ease;
         }
 
         .btn-primary {
-            background: var(--primary);
-            color: white;
+            background: linear-gradient(180deg, var(--warm-a), var(--warm-b));
+            color: var(--pill-text);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            background: linear-gradient(180deg, var(--warm-hover-a), var(--warm-hover-b));
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.45);
         }
 
         .btn-accent {
-            background: var(--accent);
-            color: white;
+            background: var(--glass);
+            color: var(--text);
+            border: 0.5px solid var(--glass-border);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn-accent:hover {
+            background: var(--glass-hover);
+            border-color: rgba(255, 255, 255, 0.25);
         }
 
         .btn-danger {
-            background: var(--danger);
-            color: white;
+            background: linear-gradient(180deg, #f06, #c23);
+            color: var(--text);
         }
 
-        .btn:hover {
-            transform: translateY(-2px);
-            opacity: 0.9;
+        .btn-danger:hover {
+            transform: translateY(-1px);
+            filter: brightness(1.05);
         }
 
-        /* Forms */
+        .btn-success {
+            background: rgba(62, 207, 142, 0.35);
+            color: var(--text);
+            border: 0.5px solid rgba(62, 207, 142, 0.55);
+        }
+
+        .btn-success:hover {
+            background: rgba(62, 207, 142, 0.5);
+        }
+
         .form-group {
-            margin-bottom: 1rem;
+            margin-bottom: 12px;
         }
 
         label {
             display: block;
-            margin-bottom: 0.5rem;
-            font-size: 0.9rem;
-            opacity: 0.7;
+            margin-bottom: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
         }
 
         input,
         textarea,
         select {
             width: 100%;
-            background: rgba(0, 0, 0, 0.2);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 14px;
-            border-radius: 12px;
-            color: white;
+            background: var(--field-bg);
+            border: 0.5px solid var(--glass-border);
+            padding: 12px 14px;
+            border-radius: 10px;
+            color: var(--text);
             font-family: inherit;
-            box-sizing: border-box;
-            font-size: 1rem;
+            font-size: 15px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+        }
+
+        input:focus,
+        textarea:focus,
+        select:focus {
+            outline: none;
+            border-color: rgba(255, 255, 255, 0.35);
+            background: var(--field-bg-focus);
         }
 
         .alert {
-            padding: 12px;
+            padding: 11px 14px;
             border-radius: 10px;
-            margin-bottom: 1rem;
+            margin-bottom: 12px;
             display: none;
-            font-size: 0.9rem;
+            font-size: 13px;
+            font-weight: 600;
+            border: 0.5px solid transparent;
         }
 
         .alert-success {
-            background: var(--success);
+            background: rgba(62, 207, 142, 0.15);
+            border-color: rgba(62, 207, 142, 0.45);
+            color: #b8f5d3;
         }
 
         .alert-error {
-            background: var(--danger);
+            background: rgba(232, 85, 85, 0.12);
+            border-color: rgba(232, 85, 85, 0.4);
+            color: #ffc9c9;
         }
 
-        .back-link {
-            color: var(--primary);
-            text-decoration: none;
-            font-weight: 600;
-        }
-
-        /* Stats Grid */
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 1rem;
-            margin-bottom: 2rem;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px;
+            margin-bottom: 12px;
         }
 
         .stat-card {
-            background: rgba(255, 255, 255, 0.05);
-            padding: 1.5rem;
-            border-radius: 15px;
+            background: rgba(255, 255, 255, 0.08);
+            padding: 14px;
+            border-radius: 10px;
             text-align: center;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            border: 0.5px solid var(--glass-border);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
         }
 
         .stat-value {
-            font-size: 1.8rem;
-            font-weight: 800;
-            color: var(--primary);
-            margin: 5px 0;
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: var(--text);
+            margin: 4px 0;
         }
 
         .stat-label {
-            font-size: 0.8rem;
-            opacity: 0.7;
+            font-size: 11px;
+            color: var(--muted);
             text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
 
         .progress-bar-wrap {
             width: 100%;
-            background: rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.08);
             height: 8px;
             border-radius: 4px;
-            margin-top: 10px;
+            margin-top: 8px;
             overflow: hidden;
         }
 
         .progress-bar {
             height: 100%;
-            background: var(--primary);
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0.85), var(--warm-a));
+            border-radius: 4px;
+        }
+
+        .hint {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 0;
+            margin-bottom: 12px;
+            line-height: 1.45;
         }
     </style>
 </head>
@@ -266,8 +407,14 @@
 <body>
 
     <nav class="navbar">
-        <div class="logo">ADMIN PANEL</div>
-        <a href="/welcome" class="back-link">← Chiqish</a>
+        <div class="logo">
+            <img class="brand" src="/favicon-96x96.png" width="40" height="40" alt="" />
+            <div class="logo-titles">
+                <span class="logo-title">Spin The Bottle</span>
+                <span class="logo-sub">Admin panel</span>
+            </div>
+        </div>
+        <a href="/welcome" class="back-link">← O‘yin</a>
     </nav>
 
     <div class="tabs">
@@ -283,24 +430,25 @@
         <div id="dashboard" class="tab-content active">
             <!-- Balance Form -->
             <div class="card">
-                <h2>💰 Balans to'ldirish</h2>
+                <h2>Balans qo‘shish</h2>
                 <div id="balance-alert" class="alert"></div>
+                <p class="hint">O‘yinda: <strong>yurak</strong> = gold, <strong>yulduz</strong> = token/coin. Bu yerda yozilgan qiymatlar shu ustunlarga qo‘shiladi.</p>
                 <div class="form-group">
                     <label>Foydalanuvchi ID</label>
-                    <input type="number" id="balance-user-id" placeholder="ID kiriting...">
+                    <input type="number" id="balance-user-id" min="1" step="1" placeholder="Masalan: 42">
                 </div>
                 <div class="form-group">
                     <label>Miqdor</label>
-                    <input type="number" id="balance-amount" value="1000">
+                    <input type="number" id="balance-amount" min="1" step="1" value="1000">
                 </div>
                 <div class="form-group">
-                    <label>Turi</label>
+                    <label>Valyuta</label>
                     <select id="balance-currency">
-                        <option value="stars">Stars (Coin)</option>
-                        <option value="hearts">Hearts (Live Balance)</option>
+                        <option value="stars">Yulduz (token / coin)</option>
+                        <option value="hearts">Yurak (gold)</option>
                     </select>
                 </div>
-                <button class="btn btn-primary" style="width: 100%;" onclick="addBalance()">Qo'shish</button>
+                <button class="btn btn-primary" style="width: 100%;" onclick="addBalance()">Balansga qo‘shish</button>
             </div>
 
             <!-- Broadcast Form -->
@@ -545,13 +693,22 @@
         }
 
         async function addBalance() {
-            const userId = document.getElementById('balance-user-id').value;
-            const amount = document.getElementById('balance-amount').value;
+            const userId = document.getElementById('balance-user-id').value.trim();
+            const amountRaw = document.getElementById('balance-amount').value.trim();
             const currency = document.getElementById('balance-currency').value;
             const alert = document.getElementById('balance-alert');
 
-            if (!userId) {
-                alert.innerText = 'IDni kiriting';
+            const uid = parseInt(userId, 10);
+            if (!userId || !Number.isFinite(uid) || uid < 1) {
+                alert.innerText = 'To‘g‘ri foydalanuvchi ID kiriting';
+                alert.className = 'alert alert-error';
+                alert.style.display = 'block';
+                return;
+            }
+
+            const amount = parseInt(amountRaw, 10);
+            if (!Number.isFinite(amount) || amount < 1) {
+                alert.innerText = 'Miqdor musbat butun son bo‘lishi kerak';
                 alert.className = 'alert alert-error';
                 alert.style.display = 'block';
                 return;
@@ -561,11 +718,12 @@
                 const res = await fetch('/api/admin/add-balance', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_id: parseInt(userId), amount: parseInt(amount), currency })
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ user_id: uid, amount, currency })
                 });
-                const result = await res.json();
+                const result = await res.json().catch(() => ({}));
 
-                alert.innerText = result.message;
+                alert.innerText = result.message || (res.ok ? 'OK' : 'So‘rov bajarilmadi');
                 alert.className = result.success ? 'alert alert-success' : 'alert alert-error';
                 alert.style.display = 'block';
 
@@ -573,7 +731,8 @@
                     document.getElementById('balance-user-id').value = '';
                 }
             } catch (err) {
-                alert.innerText = 'Xatolik yuz berdi';
+                alert.innerText = 'Tarmoq xatoligi';
+                alert.className = 'alert alert-error';
                 alert.style.display = 'block';
             }
         }

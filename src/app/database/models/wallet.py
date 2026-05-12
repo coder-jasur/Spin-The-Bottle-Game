@@ -17,8 +17,8 @@ class Wallet(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False
     )
-    hearts: Mapped[int] = mapped_column(BigInteger, server_default="500", nullable=False)
-    stars: Mapped[int] = mapped_column(BigInteger, server_default="50", nullable=False)
+    hearts: Mapped[int] = mapped_column(BigInteger, server_default="0", nullable=False)
+    stars: Mapped[int] = mapped_column(BigInteger, server_default="0", nullable=False)
     stars_coin: Mapped[int] = mapped_column(BigInteger, server_default="0", nullable=False)
     balance_live: Mapped[int] = mapped_column(BigInteger, server_default="0", nullable=False)
     bonus_hearts: Mapped[int] = mapped_column(BigInteger, server_default="0", nullable=False)

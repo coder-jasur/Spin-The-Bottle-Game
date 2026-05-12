@@ -8,6 +8,7 @@ from .transaction import Transaction
 from .admin import Admins, AdminActionLog, BroadcastMessage
 from .story import Story, StoryView, StoryLike
 from .table import TableRoom
+from .table_chat import TableChatMessage
 
 __all__ = [
     "User",
@@ -25,4 +26,5 @@ __all__ = [
     "StoryView",
     "StoryLike",
     "TableRoom",
+    "TableChatMessage",
 ]

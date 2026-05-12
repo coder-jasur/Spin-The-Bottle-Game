@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.app.api.ws.player import parse_birth_date_ms
 from src.app.core.jwt import verify_access_token
 from src.app.database.repositories.user import UserRepository
 
@@ -97,16 +98,7 @@ async def get_me(
                     "ban_expires_at": ban_time_str
                 }
 
-        # Tug'ilgan kunni timestampga o'tkazish (millisekundlarda)
-        birthday_ts = 0
-        if user.birth_date:
-            try:
-                from datetime import datetime
-                # Format: 2008-05-06
-                dt = datetime.strptime(user.birth_date, "%Y-%m-%d")
-                birthday_ts = int(dt.timestamp() * 1000)
-            except:
-                pass
+        birthday_ts = parse_birth_date_ms(user.birth_date)
 
         # Gender matnini o'zgartirish
         gender_display = "Kişi" # Default male
@@ -217,13 +209,17 @@ async def update_game_username(
         birth_date_str = data["birth_date"]
         user.birth_date = birth_date_str
         try:
-            from datetime import datetime
-            birth_dt = datetime.strptime(birth_date_str, "%Y-%m-%d")
-            today = datetime.now()
-            # Yoshni aniq hisoblash
-            age = today.year - birth_dt.year - ((today.month, today.day) < (birth_dt.month, birth_dt.day))
-            user.age = age
-        except:
+            from datetime import datetime, timezone
+
+            ms = parse_birth_date_ms(birth_date_str)
+            if ms:
+                birth_dt = datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
+                today = datetime.now(timezone.utc)
+                age = today.year - birth_dt.year - (
+                    (today.month, today.day) < (birth_dt.month, birth_dt.day)
+                )
+                user.age = age
+        except Exception:
             pass
 
     await session.commit()

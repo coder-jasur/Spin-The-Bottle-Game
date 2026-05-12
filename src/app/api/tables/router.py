@@ -23,40 +23,16 @@ async def get_rooms(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Berilgan mamlakat uchun aktiv xonalar ro'yxatini qaytaradi.
-    Har bir xonadagi online o'yinchilar soni ham ko'rsatiladi.
+    Berilgan mamlakat uchun aktiv xonalar ro'yxati (faqat ochiq/ochiladigan stollar).
     """
     manager = _get_manager()
-    repo    = GameRepository(db)
+    # DB sessiyasi seed uchun ishlatiladi; ro'yxat manager orqali
+    repo = GameRepository(db)
+    c = country.upper()
+    await repo.seed_country_tables(c)
+    await repo.seed_global_tables()
 
-    # DB dan xonalar
-    db_rooms = await repo.get_rooms_by_country(country)
-
-    # Kamida 5 ta xona bo'lsin
-    specific = [r for r in db_rooms if r.country_code == country.upper()]
-    if len(specific) < 5:
-        await repo.ensure_base_rooms(country, min_count=5)
-        db_rooms = await repo.get_rooms_by_country(country)
-
-    rooms_out = []
-    for room in db_rooms:
-        rid_str      = str(room.room_id)
-        online_count = 0
-        if rid_str in manager.tables:
-            online_count = manager.tables[rid_str].player_count()
-
-        rooms_out.append({
-            "id":             rid_str,
-            "room_id":        room.room_id,
-            "name":           room.name,
-            "currentPlayers": online_count,
-            "online":         online_count,
-            "maxPlayers":     room.capacity,
-            "capacity":       room.capacity,
-            "is_vip":         room.is_vip,
-            "min_level":      room.min_level,
-            "country":        room.country_code,
-        })
+    rooms_out = await manager.http_tables_list_payload(country)
 
     return {"ok": True, "tables": rooms_out}
 

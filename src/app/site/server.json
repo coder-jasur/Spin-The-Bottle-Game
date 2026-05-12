@@ -1,6 +1,6 @@
 {
     "assets": {
-        "url": "./assets.json?v=2",
+        "url": "./assets.json?v=5",
         "images_url": "http://localhost:8000/",
         "images_url_v2": "http://localhost:8000/${width}/${name}.png",
         "images_url_v3": {
@@ -186,7 +186,12 @@
         "server_v2": [
             "ws://localhost:8000/ws/"
         ],
-        "port": 8000
+        "port": 8000,
+        "youtube": "http://78.155.203.218/",
+        "youtube_v2": [
+            "https://youtube.ciliz.com/",
+            "https://api-proxy.ciliz.com/youtube/"
+        ]
     },
     "gg": {
         "server": "54.72.14.154",

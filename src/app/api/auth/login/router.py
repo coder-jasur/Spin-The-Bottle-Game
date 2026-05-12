@@ -35,31 +35,54 @@ async def login(data: LoginModel, session: AsyncSession = Depends(get_db)):
         await user_repo.update_daily_streak(user)
         await session.commit() # Streakni saqlash
 
+        is_admin = await user_repo.is_admin(user.id)
+        from src.app.api.ws.constants import ADMIN_DISPLAY_STARS
+
+        if is_admin and user.wallet:
+            floor = ADMIN_DISPLAY_STARS
+            dirty = False
+            if int(user.wallet.stars_coin or 0) < floor:
+                user.wallet.stars_coin = floor
+                dirty = True
+            if int(user.wallet.stars or 0) < floor:
+                user.wallet.stars = floor
+                dirty = True
+            if dirty:
+                await session.commit()
+
         stars = user.wallet.stars if user.wallet else 0
         gift_tokens = user.wallet.gift_tokens if user.wallet else 0
+        gm_coin_raw = int(user.wallet.stars_coin or 0) if user.wallet else 0
         display_username = user.username or user.display_name or f"user_{user.id}"
-        is_admin = await user_repo.is_admin(user.id)
-        
-        response_data = {
-            "success": True,
-            "accessToken": access_token,
-            "refreshToken": refresh_token,
-            "device_user_ids": access_token, 
-            "user": {
+
+        if is_admin:
+            stars = max(int(stars or 0), ADMIN_DISPLAY_STARS)
+            gm_coin = max(gm_coin_raw, ADMIN_DISPLAY_STARS)
+        else:
+            gm_coin = gm_coin_raw
+
+        user_payload = {
                 "id": user.id,
-                "username": user.login, 
+                "username": user.login,
                 "game_username": display_username,
                 "display_name": display_username,
                 "stars": stars,
                 "gift_tokens": gift_tokens,
                 "daily_streak": user.daily_streak,
-                "gm_coin": 0,
+                "gm_coin": gm_coin,
                 "level": user.level,
                 "gender": user.gender or "male",
                 "is_admin": is_admin,
                 "profile_picture": user.avatar_url or "/photos/no_img.png",
                 "country": user.country or "UZ"
-            },
+            }
+
+        response_data = {
+            "success": True,
+            "accessToken": access_token,
+            "refreshToken": refresh_token,
+            "device_user_ids": access_token,
+            "user": user_payload,
         }
 
         response = Response(

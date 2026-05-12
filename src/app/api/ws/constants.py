@@ -1,6 +1,9 @@
 """
 O'yin konstantalari — barcha item turlari, narxlar, holat kodlari.
 """
+from __future__ import annotations
+
+from datetime import datetime
 
 # ── Boosterlar ────────────────────────────────────────────────────────────
 BOOSTER_TYPES = {
@@ -14,8 +17,11 @@ BOOSTER_TYPES = {
 # ── Butilkalar ────────────────────────────────────────────────────────────
 BOTTLE_TYPES = ['baby', 'champagnebot', 'cognac', 'cola', 'jackdaniels', 'ketchup', 'lemonade', 'martinibot', 'milkbot', 'nybottle', 'pirate', 'ship', 'skeleton', 'skewer', 'sprite', 'standart', 'vipbottle', 'vodkabot', 'yacht']
 
+# Yangi stol — doim Coca-Cola butilka (asset nomi: cola)
+DEFAULT_BOTTLE_TYPE = "cola"
+
 BOTTLE_PRICES = {
-    "standart": 0, "baby": 5, "milkbot": 5, "ketchup": 5, "lemonade": 5,
+    "standart": 0, "cola": 5, "baby": 5, "milkbot": 5, "ketchup": 5, "lemonade": 5,
     "champagnebot": 15, "vodkabot": 15, "martinibot": 15,
     "jackdaniels": 25, "nybottle": 25,
     "ship": 30, "skeleton": 40, "pirate": 40,
@@ -90,6 +96,45 @@ MAX_SEATS = 12
 LEAGUE_STATES = ["welcome", "running", "finished"]
 LEAGUE_KISS_LIMIT = 500
 
+# ── Kickout (stoldan haydash) narxlari ────────────────────────────────────
+# Oxirgi kickdan 30 daqiqa o'tsa zanjir uziladi (keyingi kick yana bepul dan boshlanadi).
+KICKOUT_STREAK_RESET_SECONDS = 30 * 60
+
+# uses = joriy zanjirda allaqachon muvaffaqiyatli boshlangan kicklar soni (0 → keyingi kick bepul)
+KICKOUT_PRICE_LADDER: tuple[int, ...] = (0, 15, 30, 50, 80, 120, 170, 240)
+# Ladder dan keyin har qadamda oldingi narxga ko'paytiruv (million/milliardgacha o'sishi mumkin)
+KICKOUT_PRICE_GROWTH_MULT = 1.62
+KICKOUT_PRICE_MAX = 10**15
+
+
+def kickout_streak_effective_uses(
+    streak_count: int,
+    last_at: datetime | None,
+    now: datetime,
+) -> int:
+    """DB dagi zanjir: oxirgi kick vaqti 30 d dan eski bo'lsa yoki hech kick bo'lmasa → 0."""
+    if last_at is None:
+        return 0
+    elapsed = (now - last_at).total_seconds()
+    if elapsed > KICKOUT_STREAK_RESET_SECONDS:
+        return 0
+    return max(0, int(streak_count or 0))
+
+
+def kickout_price_for_use_index(uses_completed: int) -> int:
+    """Keyingi kick narxi: 0 bepul, keyin ladder, keyin eksponensial (chegara KICKOUT_PRICE_MAX)."""
+    if uses_completed < 0:
+        uses_completed = 0
+    ladder = KICKOUT_PRICE_LADDER
+    if uses_completed < len(ladder):
+        return ladder[uses_completed]
+    price = float(ladder[-1])
+    extra_steps = uses_completed - (len(ladder) - 1)
+    for _ in range(extra_steps):
+        price *= KICKOUT_PRICE_GROWTH_MULT
+    p = int(price)
+    return min(max(p, ladder[-1]), KICKOUT_PRICE_MAX)
+
 # ── Default items (user yaratilganda beriladi) ────────────────────────────
 DEFAULT_USER_ITEMS = {
     "kiss_fire": 0,
@@ -98,6 +143,10 @@ DEFAULT_USER_ITEMS = {
     "league_kiss_lim10": 0,
     "league5": 0,
 }
+
+# Admin o'yinda: RAM minimal balans (server tekshiruvlari uchun)
+ADMIN_DISPLAY_HEARTS = 999_999_999
+ADMIN_DISPLAY_STARS = 999_999_999
 
 # ── Bonus miqdorlari ──────────────────────────────────────────────────────
 WELCOME_BONUS_HEARTS    = 10
@@ -112,13 +161,17 @@ ACHIEVEMENT_MILESTONES  = {    # N ta taklif → bonus
 
 # ── Xona diapazoni ────────────────────────────────────────────────────────
 ROOM_RANGES = {
-    "UZBEKISTAN": (1001, 1200),
-    "KAZAKHSTAN": (2501, 2700),
-    "RUSSIA":     (4001, 4200),
-    "TURKEY":     (3001, 3200),
-    "AZERBAIJAN": (3501, 3700),
-    "ALL":        (5501, 5700),   # Hammaga ochiq
-    "VIP":        (9001, 9050),   # VIP stollar
+    "UZBEKISTAN": (1001, 1150),
+    "KAZAKHSTAN": (2501, 2650),
+    "RUSSIA":     (4001, 4150),
+    "USA":        (7001, 7150),
+    "AMERICA":    (7001, 7150),
+    "TURKEY":     (10001, 10150),
+    "TURKISTAN":  (10001, 10150),
+    "AZERBAIJAN": (11501, 11650),
+    "TAJIKISTAN": (14501, 14650),
+    "ALL":        (5501, 5520),   # 20 ta global (room_policy bilan mos)
+    "VIP":        (9001, 9150),   # 150 VIP slot
 }
 COUNTRY_ROOMS_MIN = 5   # Har davlat uchun minimal stol soni
 GLOBAL_ROOMS_MIN  = 10  # "ALL" uchun minimal stol soni
@@ -151,12 +204,25 @@ DAILY_BONUS_GOLD       = 5
 KISS_BONUS_GOLD        = 2
 RETENTION_BONUS_GOLD   = 15
 REWARDED_VIDEO_GOLD    = 10
-# --- Iqtisodiy model (Yangi) --------------------------------------------------
-VIP_PRICE_STARS = 750 # 1000 Stars - 25% chegirma
+# --- Iqtisodiy model (klient: F2 paketlari, hs VIP narxlari) -------------------
+# VIP: dlg week/month — USD matnda 200 / 650 STARS (index-*.js `hs`)
+VIP_PLAN_STARS = {"week": 200, "month": 650}
+VIP_PLAN_DAYS = {"week": 7, "month": 30}
+VIP_BONUS_STARS = 50
+VIP_PRICE_STARS = VIP_PLAN_STARS["month"]  # eski importlar uchun default
 
+# Hearts paketlari: kalit = klient `gm_hearts_purchase` dagi STARS (`F2.USD[].real`)
 HEARTS_PACKAGES = {
-    250: 500,    # 250 Stars -> 500 Hearts
-    500: 2200,   # 500 Stars -> 2200 Hearts
-    1350: 6000,  # 1350 Stars -> 6000 Hearts
-    2500: 12500, # 2500 Stars -> 12500 Hearts
+    250: 500,
+    500: 2200,
+    1350: 6000,
+    2500: 12500,
+    10: 10,
+    2000: 2200,
+    5000: 6000,
+    10000: 12500,
 }
+
+# ─── Bank komplimentlari (klient: compliment_next / compliment_send) ───────
+COMPLIMENTS_TO_REWARD = 3
+COMPLIMENT_GOLD_REWARD = 50

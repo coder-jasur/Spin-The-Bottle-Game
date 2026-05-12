@@ -57,11 +57,21 @@ def decrypt_aes(b64: str, key: str = DECRYPT_KEY) -> Optional[dict]:
 # ─────────────────────────────────────────────────────────────────────────
 
 def prepare_packet(data: dict) -> bytes:
-    """Dict → [2B len][JSON {"data": "..."}]"""
+    """Dict → [2B len][JSON {"data": "..."}] — eski Python klientlar uchun."""
     b64 = encrypt_aes(data)
     payload = json.dumps({"data": b64}, separators=(",", ":"), ensure_ascii=False).encode()
     ln = len(payload)
     return bytes([ln >> 8 & 0xFF, ln & 0xFF]) + payload
+
+
+def wire_packet(data: dict) -> bytes:
+    """
+    Brauzer klienti (Cs.sendString) bilan mos: [2 bayt BE uzunlik][UTF-8 JSON].
+    index-*.js onmessage ham xuddi shu formatni JSON.parse qiladi.
+    """
+    payload = json.dumps(data, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ln = len(payload)
+    return bytes([(ln >> 8) & 0xFF, ln & 0xFF]) + payload
 
 
 def parse_packet(raw: bytes) -> dict:

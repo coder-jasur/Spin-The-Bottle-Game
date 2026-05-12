@@ -1,8 +1,7 @@
 """
 Spin the Bottle — WebSocket test klienti.
 
-Protokol: binary subprotocol, 2 bayt uzunlik + CryptoJS AES paket (utils.prepare_packet)
-yoki oddiy JSON (parse_packet ikkalasini ham qabul qiladi).
+Protokol: server bilan bir xil — 2 bayt + {"data": "<CryptoJS AES>"} (prepare_packet).
 
 Server marshrut: src.app.api.ws.game_manager.GameManager.handle()
 """
@@ -51,26 +50,32 @@ def encrypt_cryptojs(data_dict: dict, password: str = DECRYPT_KEY) -> str:
     return '"' + b64 + '"'
 
 
+def _encrypt_aes_b64(data_dict: dict) -> str:
+    """CryptoJS OpenSSL format, quotesiz base64 (server encrypt_aes bilan bir xil)."""
+    s = encrypt_cryptojs(data_dict)
+    return s.strip('"') if s.startswith('"') else s
+
+
 def prepare_packet(data: dict) -> bytes:
-    encrypted_str = encrypt_cryptojs(data)
-    payload = encrypted_str.encode("utf-8")
-    length = len(payload)
-    return bytes([length // 256, length % 256]) + payload
+    b64 = _encrypt_aes_b64(data)
+    payload = json.dumps({"data": b64}, separators=(",", ":"), ensure_ascii=False).encode(
+        "utf-8"
+    )
+    ln = len(payload)
+    return bytes([(ln >> 8) & 0xFF, ln & 0xFF]) + payload
 
 
 def parse_packet(raw: bytes) -> dict:
-    if len(raw) < 2:
+    if not raw:
         return {}
-    payload = raw[2:]
+    payload = raw if raw[0] == 123 else raw[2:]
     try:
-        return json.loads(payload.decode("utf-8"))
-    except Exception:
-        pass
-    try:
-        s = payload.decode("utf-8").strip()
-        if s.startswith('"') and s.endswith('"'):
-            s = s[1:-1]
-        return decrypt_cryptojs(s)
+        obj = json.loads(payload.decode("utf-8", errors="ignore"))
+        if isinstance(obj, dict) and "data" in obj:
+            s = obj.get("data", "")
+            if isinstance(s, str):
+                return decrypt_cryptojs(s) or {}
+        return obj if isinstance(obj, dict) else {}
     except Exception as e:
         print(f"[PARSE ERROR] {e}")
         return {}
@@ -285,7 +290,7 @@ class SpinBottleClient:
     async def login(self, token_or_id: str | None = None, room_id: str | None = None):
         """
         Router: birinchi paket. id = JWT yoki session token; bo'lmasa guest.
-        room_id — stol (default router: 1003).
+        room_id — stol (default: 1, DB `table_rooms.id`).
         """
         payload: dict = {"type": "login", "id": token_or_id or self.user_id}
         if room_id is not None:
@@ -436,6 +441,24 @@ class SpinBottleClient:
     async def court_purchase(self, target_user_id: str):
         await self.send({"type": "harem_purchase", "user_id": target_user_id})
 
+    async def invite_to_table(self, friend_user_id: str):
+        await self.send(
+            {"type": "invite_to_table", "user_id": str(friend_user_id)}
+        )
+
+    async def admirer_add(self, target_user_id: str):
+        """DB: admirer munosabat + onlayn bo'lsa fellow_invite."""
+        await self.send({"type": "admirer_add", "user_id": str(target_user_id)})
+
+    async def answer_friend_request(self, user_id: str, accepted: bool):
+        await self.send(
+            {
+                "type": "friend_request_answer",
+                "user_id": str(user_id),
+                "accepted": accepted,
+            }
+        )
+
     async def kickout_user(self, user_id: str, price: int = 10):
         await self.send(
             {"type": "user_kickout", "user_id": user_id, "expected_price": price}
@@ -513,7 +536,7 @@ class SpinBottleClient:
 
 
 async def _demo():
-    c = SpinBottleClient(table_id="1003", user_id="1001")
+    c = SpinBottleClient(table_id="1", user_id="1001")
     await c.connect()
     await c.login()
     asyncio.create_task(c.listen())

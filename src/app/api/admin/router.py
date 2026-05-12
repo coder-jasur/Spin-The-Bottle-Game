@@ -115,37 +115,59 @@ async def add_balance(
     session: AsyncSession = Depends(get_db),
     admin_id: int = Depends(get_current_admin)
 ):
-    target_id = data.get("user_id")
-    amount = data.get("amount", 0)
-    currency = data.get("currency", "stars") # "stars" yoki "hearts" (balance_live)
-    
+    """O'yinda ko'rinadigan balans: `Wallet.stars` (token/coin), `Wallet.hearts` (gold/yurak)."""
+    try:
+        target_id = int(data.get("user_id"))
+    except (TypeError, ValueError):
+        return JSONResponse(
+            {"success": False, "message": "Foydalanuvchi ID noto'g'ri"},
+            status_code=400,
+        )
+
+    try:
+        amount = int(data.get("amount", 0))
+    except (TypeError, ValueError):
+        amount = 0
+
+    currency = (data.get("currency") or "stars").strip().lower()
+    if currency not in ("stars", "hearts"):
+        currency = "stars"
+
+    if amount <= 0:
+        return JSONResponse(
+            {"success": False, "message": "Miqdor musbat butun son bo'lishi kerak"},
+            status_code=400,
+        )
+
     user_repo = UserRepository(session)
     user = await user_repo.get_user_by_id(target_id)
     if not user:
         return JSONResponse({"success": False, "message": "User topilmadi"}, status_code=404)
-    
+
     if not user.wallet:
         user.wallet = Wallet(user_id=user.id)
         session.add(user.wallet)
         await session.flush()
 
     if currency == "stars":
-        user.wallet.stars_coin += amount
+        # WS o'yini `Wallet.stars`; frames/load-assets esa `gm_coin` uchun `stars_coin` beradi — ikkalasini sinxron tutamiz.
+        user.wallet.stars = int(user.wallet.stars or 0) + amount
+        user.wallet.stars_coin = int(user.wallet.stars_coin or 0) + amount
     else:
-        user.wallet.balance_live += amount
-        
-    # Log yozish
+        user.wallet.hearts = int(user.wallet.hearts or 0) + amount
+
     log = AdminActionLog(
         admin_id=admin_id,
         target_user_id=target_id,
         action=f"add_{currency}",
         amount=amount,
-        details=f"Admin {admin_id} added {amount} {currency} to user {target_id}"
+        details=f"Admin {admin_id} added {amount} {currency} to user {target_id}",
     )
     session.add(log)
-    
+
     await session.commit()
-    return {"success": True, "message": f"{amount} {currency} muvaffaqiyatli qo'shildi"}
+    label = "yulduz (token)" if currency == "stars" else "yurak (gold)"
+    return {"success": True, "message": f"+{amount} {label} qo'shildi"}
 
 @router.post("/api/admin/ban")
 async def ban_user_endpoint(
