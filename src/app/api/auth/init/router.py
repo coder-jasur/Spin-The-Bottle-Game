@@ -3,6 +3,7 @@ from pydantic import BaseModel
 import json
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.app.api.deps import get_db
+from src.app.core.language import normalize_lang
 
 router = APIRouter(tags=["Init"])
 
@@ -12,14 +13,11 @@ class InitModel(BaseModel):
 @router.post("/api/auth/init")
 @router.post("/auth/init")
 async def auth_init(request: Request, data: InitModel):
-    # Faqat lang qaytaramiz, boshqa ortiqcha narsa yo'q
-    response_content = {
-        "lang": data.lang
-    }
-    
+    lang = normalize_lang(data.lang)
+    response_content = {"lang": lang}
+
     response = Response(content=json.dumps(response_content), media_type="application/json")
-    # Tilni cookie sifatida ham saqlab qo'yamiz (ixtiyoriy)
-    response.set_cookie(key="language", value=data.lang, path="/", max_age=3600*24*365)
+    response.set_cookie(key="language", value=lang, path="/", max_age=3600 * 24 * 365)
     return response
 
 @router.get("/api/auth/check-verification")

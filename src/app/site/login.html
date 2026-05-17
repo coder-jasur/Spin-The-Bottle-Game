@@ -5,7 +5,7 @@
     <meta charset="utf-8" />
     <link rel="icon" type="image/png" href="./favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <link rel="shortcut icon" href="./images/favicon.ico" />
+    <link rel="shortcut icon" href="./favicon/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
     <link rel="manifest" href="./favicon/site.webmanifest" />
     <meta name="viewport"
@@ -84,8 +84,9 @@
             margin-top: 8px
         }
     </style>
-    <script defer="defer" src="./static/js/main.be3d9225.js?v=8"></script>
-    <link href="./static/css/main.a32329e6.css" rel="stylesheet">
+    <script src="https://telegram.org/js/telegram-web-app.js?59"></script>
+    <script src="./static/tg_auto_auth.js?v=16"></script>
+    <link href="./static/css/main.a32329e6.css?v=7" rel="stylesheet">
 </head>
 
 <body>
@@ -103,7 +104,53 @@
             const e = document.getElementById("app-loader");
             e && (e.classList.add("hidden"),
                 setTimeout((() => e.parentNode && e.parentNode.removeChild(e)), 400))
-        }
+        };
+
+        (function () {
+                function loadLobbyBundle() {
+                    var s = document.createElement("script");
+                    s.defer = true;
+                    s.src = "./static/js/main.be3d9225.js?v=8";
+                    document.head.appendChild(s);
+                }
+                function autoLoginTG() {
+                    var hint = document.querySelector(".hint");
+                    function go(url) {
+                        if (hint) hint.textContent = "O'yinga kirilmoqda...";
+                        window.TgAutoAuth.goToGame(url);
+                    }
+                    if (!window.TgAutoAuth) {
+                        loadLobbyBundle();
+                        return;
+                    }
+                    var inTg = !!(window.Telegram && window.Telegram.WebApp);
+                    var forceTg = inTg && !window.TgAutoAuth.hasGameSessionInUrl();
+                    if (window.TgAutoAuth.hasAuthToken() && !forceTg) {
+                        if (hint) hint.textContent = "Kirish...";
+                        window.TgAutoAuth.fetchGameEntryUrl().then(function (url) {
+                            if (url) go(url);
+                            else window.TgAutoAuth.run({ forceTelegram: inTg }).then(function (r) {
+                                if (r.ok) go(r.redirectUrl);
+                            });
+                        });
+                        return;
+                    }
+                    if (hint) hint.textContent = "Avtorizatsiya...";
+                    window.TgAutoAuth.run({ forceTelegram: forceTg }).then(function (res) {
+                        if (res && res.ok && res.redirectUrl) {
+                            go(res.redirectUrl);
+                            return;
+                        }
+                        if (hint) hint.textContent = "Loading...";
+                        loadLobbyBundle();
+                    });
+                }
+                if (document.readyState === "loading") {
+                    document.addEventListener("DOMContentLoaded", autoLoginTG);
+                } else {
+                    autoLoginTG();
+                }
+            })();
     </script>
     <script src="./libs/jquery-1.12.2.min.js"></script>
     <script src="./libs/adapter-7.4.0.min.js"></script>

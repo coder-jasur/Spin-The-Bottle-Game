@@ -1,0 +1,381 @@
+# English translations for PROJECT.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the PROJECT project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-05-16 14:52+0500\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: en\n"
+"Language-Team: en <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+msgid ""
+"Hey! Get ready to dive into the ultimate Spin the Bottle adventure.\n"
+"\n"
+"👀 See who's around you and start a conversation\n"
+"🎁 Exchange fun surprises and playful dares\n"
+"💌 Send hidden messages to someone special\n"
+"🎲 Enjoy entertaining games together in the room\n"
+"🎶 Play along with music in the background\n"
+"\n"
+"🎮 Tap PLAY and let the fun start!\n"
+"\n"
+"⭐ Buy Stars: /store"
+msgstr ""
+"Hey! Get ready to dive into the ultimate Spin the Bottle adventure.\n"
+"\n"
+"👀 See who's around you and start a conversation\n"
+"🎁 Exchange fun surprises and playful dares\n"
+"💌 Send hidden messages to someone special\n"
+"🎲 Enjoy entertaining games together in the room\n"
+"🎶 Play along with music in the background\n"
+"\n"
+"🎮 Tap PLAY and let the fun start!\n"
+"\n"
+"⭐ Buy Stars: /store"
+
+msgid "Mini App is not configured yet. Set TELEGRAM_WEBAPP_URL in .env."
+msgstr "Mini App is not configured yet. Set TELEGRAM_WEBAPP_URL in .env."
+
+msgid "🎮 PLAY"
+msgstr "🎮 PLAY"
+
+msgid "⭐ Stars store"
+msgstr "⭐ Stars store"
+
+msgid ""
+"⭐ <b>Stars store</b>\n"
+"\n"
+"Choose a package or <b>Custom amount</b> to enter your own value.\n"
+"After payment, the same number of ★ Stars will be added to your balance.\n"
+"\n"
+"Select a package or amount — Telegram invoice will arrive."
+msgstr ""
+"⭐ <b>Stars store</b>\n"
+"\n"
+"Choose a package or <b>Custom amount</b> to enter your own value.\n"
+"After payment, the same number of ★ Stars will be added to your balance.\n"
+"\n"
+"Select a package or amount — Telegram invoice will arrive."
+
+#, python-format
+msgid "Current balance: <b>%(sc)s</b> ★ Stars"
+msgstr "Current balance: <b>%(sc)s</b> ★ Stars"
+
+#, python-format
+msgid "Gift tokens: <b>%(gt)s</b>"
+msgstr "Gift tokens: <b>%(gt)s</b>"
+
+msgid "Open the game first: /start → PLAY, then send /store again."
+msgstr "Open the game first: /start → PLAY, then send /store again."
+
+msgid "✏️ Custom amount"
+msgstr "✏️ Custom amount"
+
+#, python-format
+msgid ""
+"How many ★ Stars do you want?\n"
+"Send a number (e.g. <code>150</code>).\n"
+"Range: %(min)s — %(max)s\n"
+"\n"
+"Cancel: /store"
+msgstr ""
+"How many ★ Stars do you want?\n"
+"Send a number (e.g. <code>150</code>).\n"
+"Range: %(min)s — %(max)s\n"
+"\n"
+"Cancel: /store"
+
+#, python-format
+msgid ""
+"Send a whole number only (e.g. 100).\n"
+"%(err)s"
+msgstr ""
+"Send a whole number only (e.g. 100).\n"
+"%(err)s"
+
+#, python-format
+msgid "Amount must be a whole number from %(min)s to %(max)s."
+msgstr "Amount must be a whole number from %(min)s to %(max)s."
+
+msgid "Open the game first: /start → PLAY"
+msgstr "Open the game first: /start → PLAY"
+
+#, python-format
+msgid "✅ Invoice for %(stars)s ★ sent — confirm payment."
+msgstr "✅ Invoice for %(stars)s ★ sent — confirm payment."
+
+msgid ""
+"Invoice was not sent. Check that you have not blocked the bot, or try "
+"again later."
+msgstr ""
+"Invoice was not sent. Check that you have not blocked the bot, or try "
+"again later."
+
+msgid "Invalid package"
+msgstr "Invalid package"
+
+msgid "This package is not available"
+msgstr "This package is not available"
+
+msgid "Open the game first (/start → PLAY)"
+msgstr "Open the game first (/start → PLAY)"
+
+msgid "Invoice sent — confirm payment"
+msgstr "Invoice sent — confirm payment"
+
+msgid ""
+"Invoice was not sent. Make sure the bot is not blocked in Telegram, or "
+"try /start again."
+msgstr ""
+"Invoice was not sent. Make sure the bot is not blocked in Telegram, or "
+"try /start again."
+
+msgid "Invalid order"
+msgstr "Invalid order"
+
+#, python-format
+msgid ""
+"✅ Payment received: +%(paid)s ★\n"
+"Current balance: %(sc)s ★ Stars\n"
+"You can return to the game and continue shopping."
+msgstr ""
+"✅ Payment received: +%(paid)s ★\n"
+"Current balance: %(sc)s ★ Stars\n"
+"You can return to the game and continue shopping."
+
+msgid ""
+"⭐ <b>Spin Bottle</b>\n"
+"Top up Telegram Stars — then return to the game to shop."
+msgstr ""
+"⭐ <b>Spin Bottle</b>\n"
+"Top up Telegram Stars — then return to the game to shop."
+
+#, python-format
+msgid "Spin Bottle — %(stars)s ★"
+msgstr "Spin Bottle — %(stars)s ★"
+
+#, python-format
+msgid ""
+"%(stars)s Stars will be added to your account. After payment you can "
+"return to the game."
+msgstr ""
+"%(stars)s Stars will be added to your account. After payment you can "
+"return to the game."
+
+#, python-format
+msgid "%(stars)s Telegram Stars top-up"
+msgstr "%(stars)s Telegram Stars top-up"
+
+#, python-format
+msgid "%(stars)s Stars"
+msgstr "%(stars)s Stars"
+
+msgid "🎮 Play"
+msgstr "🎮 Play"
+
+msgid "🎮 Start the game"
+msgstr "🎮 Start the game"
+
+msgid "⭐ Buy Stars"
+msgstr "⭐ Buy Stars"
+
+#, python-format
+msgid "Hello %(victim)s! %(new_owner)s took %(target)s away from your court."
+msgstr ""
+"Hello %(victim)s! %(new_owner)s took %(target)s away from your court."
+
+msgid "🛠 Admin panel"
+msgstr "🛠 Admin panel"
+
+msgid "🛠 <b>Admin panel</b>\n\nChoose an action:"
+msgstr "🛠 <b>Admin panel</b>\n\nChoose an action:"
+
+msgid "📥 Create DB backup"
+msgstr "📥 Create DB backup"
+
+msgid "📤 Restore from backup"
+msgstr "📤 Restore from backup"
+
+msgid "⛔ Access denied."
+msgstr "⛔ Access denied."
+
+msgid "⏳ Creating backup, please wait…"
+msgstr "⏳ Creating backup, please wait…"
+
+#, python-format
+msgid "✅ Backup ready.\nTables: <b>%(tables)s</b>\nRows: <b>%(rows)s</b>"
+msgstr "✅ Backup ready.\nTables: <b>%(tables)s</b>\nRows: <b>%(rows)s</b>"
+
+msgid ""
+"📤 Send the backup file as a <b>document</b> (<code>.json.gz</code> or "
+"<code>.json</code>)."
+msgstr ""
+"📤 Send the backup file as a <b>document</b> (<code>.json.gz</code> or "
+"<code>.json</code>)."
+
+#, python-format
+msgid ""
+"📂 Backup loaded.\nTables: <b>%(tables)s</b>, rows: <b>%(rows)s</b>\n\n"
+"Choose restore mode:"
+msgstr ""
+"📂 Backup loaded.\nTables: <b>%(tables)s</b>, rows: <b>%(rows)s</b>\n\n"
+"Choose restore mode:"
+
+msgid "➕ Restore missing rows only"
+msgstr "➕ Restore missing rows only"
+
+msgid "⚠️ Full DB replace"
+msgstr "⚠️ Full DB replace"
+
+msgid "❌ Cancel"
+msgstr "❌ Cancel"
+
+#, python-format
+msgid "✅ Merge complete. Rows added: <b>%(inserted)s</b>"
+msgstr "✅ Merge complete. Rows added: <b>%(inserted)s</b>"
+
+#, python-format
+msgid "✅ Full restore complete. Rows restored: <b>%(rows)s</b>"
+msgstr "✅ Full restore complete. Rows restored: <b>%(rows)s</b>"
+
+#, python-format
+msgid "❌ Restore failed: %(error)s"
+msgstr "❌ Restore failed: %(error)s"
+
+msgid "❌ Invalid backup file."
+msgstr "❌ Invalid backup file."
+
+msgid ""
+"⚠️ <b>Full replace</b> will erase current database data and load the backup. "
+"Continue?"
+msgstr ""
+"⚠️ <b>Full replace</b> will erase current database data and load the backup. "
+"Continue?"
+
+msgid "⚠️ Yes, replace all"
+msgstr "⚠️ Yes, replace all"
+
+msgid "Cancelled."
+msgstr "Cancelled."
+
+msgid "🤝 Referral & partners"
+msgstr "🤝 Referral & partners"
+
+msgid "🤝 <b>Referral & partners</b>\n\nChoose:"
+msgstr "🤝 <b>Referral & partners</b>\n\nChoose:"
+
+msgid "📋 Partner list"
+msgstr "📋 Partner list"
+
+msgid "➕ Add partner"
+msgstr "➕ Add partner"
+
+msgid "⚙️ Default referral bonus"
+msgstr "⚙️ Default referral bonus"
+
+msgid "◀️ Back"
+msgstr "◀️ Back"
+
+msgid "No partners yet."
+msgstr "No partners yet."
+
+#, python-format
+msgid "<b>Partners</b> (%(count)s):"
+msgstr "<b>Partners</b> (%(count)s):"
+
+#, python-format
+msgid ""
+"• <code>%(code)s</code> — %(name)s\n"
+"  bonus: <b>%(bonus)s</b> | limit/day: <b>%(limit)s</b>\n"
+"  guests: <b>%(guests)s</b> | today: <b>%(today)s</b>/%(limit)s"
+msgstr ""
+"• <code>%(code)s</code> — %(name)s\n"
+"  bonus: <b>%(bonus)s</b> | limit/day: <b>%(limit)s</b>\n"
+"  guests: <b>%(guests)s</b> | today: <b>%(today)s</b>/%(limit)s"
+
+#, python-format
+msgid ""
+"<b>Partner</b> #%(id)s\n"
+"User: <b>%(user_id)s</b> %(name)s\n"
+"Code: <code>%(code)s</code>\n"
+"Per invite: <b>%(bonus)s</b> hearts\n"
+"Daily limit: <b>%(limit)s</b>\n"
+"Invited guests: <b>%(guests)s</b>\n"
+"Earned today: <b>%(today)s</b>\n"
+"Status: %(status)s"
+msgstr ""
+"<b>Partner</b> #%(id)s\n"
+"User: <b>%(user_id)s</b> %(name)s\n"
+"Code: <code>%(code)s</code>\n"
+"Per invite: <b>%(bonus)s</b> hearts\n"
+"Daily limit: <b>%(limit)s</b>\n"
+"Invited guests: <b>%(guests)s</b>\n"
+"Earned today: <b>%(today)s</b>\n"
+"Status: %(status)s"
+
+#, python-format
+msgid ""
+"<b>Default referral</b> (regular users)\n"
+"Per invite: <b>%(bonus)s</b> hearts\n"
+"Daily limit: <b>%(limit)s</b>"
+msgstr ""
+"<b>Default referral</b> (regular users)\n"
+"Per invite: <b>%(bonus)s</b> hearts\n"
+"Daily limit: <b>%(limit)s</b>"
+
+msgid "✏️ Per-invite bonus"
+msgstr "✏️ Per-invite bonus"
+
+msgid "✏️ Daily limit"
+msgstr "✏️ Daily limit"
+
+msgid "🔛 Toggle active"
+msgstr "🔛 Toggle active"
+
+msgid "✅ Saved."
+msgstr "✅ Saved."
+
+#, python-format
+msgid "❌ Error: %(error)s"
+msgstr "❌ Error: %(error)s"
+
+msgid "Send partner user id, Telegram id, or login/username:"
+msgstr "Send partner user id, Telegram id, or login/username:"
+
+msgid ""
+"Send referral <b>partner code</b> (or <code>-</code> to use user's code):"
+msgstr ""
+"Send referral <b>partner code</b> (or <code>-</code> to use user's code):"
+
+msgid "Send hearts per invite (integer):"
+msgstr "Send hearts per invite (integer):"
+
+msgid "Send daily hearts limit (integer, 0 = unlimited):"
+msgstr "Send daily hearts limit (integer, 0 = unlimited):"
+
+msgid "User not found."
+msgstr "User not found."
+
+msgid "Deactivate"
+msgstr "Deactivate"
+
+msgid "Activate"
+msgstr "Activate"
+
+msgid "Active"
+msgstr "Active"
+
+msgid "Inactive"
+msgstr "Inactive"
+

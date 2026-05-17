@@ -48,10 +48,23 @@ class GameRepository:
         stmt = (
             select(User)
             .where(User.id == user_id)
-            .options(selectinload(User.wallet))
+            .options(
+                selectinload(User.wallet),
+                selectinload(User.achievements).selectinload(
+                    UserAchievement.achievement
+                ),
+            )
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def sync_daily_login_streak(self, user: User) -> None:
+        """HTTP /login dan tashqari ulanishlar (WS): ketma-ket kunlar bo'yicha streak."""
+        from src.app.database.repositories.user import UserRepository
+
+        ur = UserRepository(self.session)
+        await ur.update_daily_streak(user)
+        await self.session.commit()
 
     async def update_user_fields(self, user_id: int, **fields) -> None:
         """Foydalanuvchi maydonlarini yangilaydi."""
@@ -60,6 +73,28 @@ class GameRepository:
         stmt = update(User).where(User.id == user_id).values(**fields)
         await self.session.execute(stmt)
         await self.session.commit()
+
+    async def clear_harem_owner_except(
+        self, owner_db_id: int, except_user_id: int = 0
+    ) -> list[int]:
+        """owner_db_id ni uxajor qilgan barcha foydalanuvchilardan olib tashlaydi.
+
+        except_user_id berilsa, shu foydalanuvchi saqlanadi (yangi nishon).
+        """
+        if not owner_db_id:
+            return []
+        conds = [User.harem_owner_id == owner_db_id]
+        if except_user_id:
+            conds.append(User.id != except_user_id)
+        stmt = (
+            update(User)
+            .where(*conds)
+            .values(harem_owner_id=0)
+            .returning(User.id)
+        )
+        result = await self.session.execute(stmt)
+        await self.session.commit()
+        return [int(row[0]) for row in result.all()]
 
     async def mark_bonus_claimed(self, user_id: int) -> None:
         """Foydalanuvchi bugun bonus olganini belgilaydi."""
@@ -88,12 +123,36 @@ class GameRepository:
 
     async def ensure_wallet(self, user_id: int) -> Wallet:
         """Wallet yo'q bo'lsa yaratadi."""
+        from sqlalchemy.exc import IntegrityError
+
+        from src.app.database.sequence_sync import (
+            is_primary_key_violation,
+            sync_all_sequences,
+        )
+
         wallet = await self.get_wallet(user_id)
-        if not wallet:
-            wallet = Wallet(user_id=user_id, hearts=0, stars=0)
+        if wallet:
+            return wallet
+        for attempt in range(2):
+            wallet = Wallet(user_id=user_id)
             self.session.add(wallet)
-            await self.session.commit()
-        return wallet
+            try:
+                await self.session.flush()
+                return wallet
+            except IntegrityError as e:
+                await self.session.rollback()
+                existing = await self.get_wallet(user_id)
+                if existing:
+                    return existing
+                if attempt == 0 and is_primary_key_violation(e):
+                    await sync_all_sequences(self.session)
+                    await self.session.commit()
+                    continue
+                raise
+        wallet = await self.get_wallet(user_id)
+        if wallet:
+            return wallet
+        raise RuntimeError(f"ensure_wallet failed for user_id={user_id}")
 
     async def add_hearts(self, user_id: int, amount: int,
                          tx_type: str, description: str = "") -> int:
@@ -134,100 +193,305 @@ class GameRepository:
         await self.session.commit()
         return True, new_balance
 
-    async def add_stars(self, user_id: int, amount: int,
-                        tx_type: str, description: str = "") -> int:
+    async def get_tg_stars_revenue_stats(self) -> dict:
+        """Telegram Stars to'lovlari (transactions.type = tg_stars_topup)."""
+        now = datetime.utcnow()
+        windows = {
+            "day": now - timedelta(days=1),
+            "week": now - timedelta(days=7),
+            "month": now - timedelta(days=30),
+            "year": now - timedelta(days=365),
+        }
+
+        async def _agg(since: datetime | None) -> tuple[int, int]:
+            stmt = select(
+                func.coalesce(func.sum(Transaction.amount), 0),
+                func.count(Transaction.id),
+            ).where(Transaction.type == "tg_stars_topup")
+            if since is not None:
+                stmt = stmt.where(Transaction.created_at >= since)
+            row = (await self.session.execute(stmt)).one()
+            return int(row[0] or 0), int(row[1] or 0)
+
+        out: dict = {}
+        for key, since in windows.items():
+            stars, cnt = await _agg(since)
+            out[key] = {"stars": stars, "payments": cnt}
+        total_stars, total_cnt = await _agg(None)
+        out["total"] = {"stars": total_stars, "payments": total_cnt}
+        return out
+
+    async def get_recent_tg_stars_payments(self, *, limit: int = 50) -> list[dict]:
         stmt = (
-            update(Wallet)
-            .where(Wallet.user_id == user_id)
-            .values(stars=Wallet.stars + amount)
-            .returning(Wallet.stars)
+            select(Transaction, User)
+            .join(User, User.id == Transaction.user_id)
+            .where(Transaction.type == "tg_stars_topup")
+            .order_by(Transaction.id.desc())
+            .limit(max(1, min(int(limit), 200)))
         )
-        result = await self.session.execute(stmt)
-        new_balance = result.scalar_one_or_none() or 0
-        await self._save_tx(user_id, amount, "stars", tx_type, description)
-        await self.session.commit()
-        return new_balance
+        rows = (await self.session.execute(stmt)).all()
+        items: list[dict] = []
+        for tx, user in rows:
+            charge = ""
+            desc = tx.description or ""
+            if desc.startswith("tg_charge:"):
+                charge = desc.split(":", 1)[1][:24]
+            items.append(
+                {
+                    "id": tx.id,
+                    "user_id": tx.user_id,
+                    "username": user.username or user.login or f"ID {tx.user_id}",
+                    "amount": int(tx.amount or 0),
+                    "created_at": (
+                        tx.created_at.isoformat(sep=" ", timespec="seconds")
+                        if tx.created_at
+                        else ""
+                    ),
+                    "charge_id": charge,
+                }
+            )
+        return items
 
-    async def spend_stars(self, user_id: int, amount: int,
-                          tx_type: str, description: str = "") -> tuple[bool, int]:
-        wallet = await self.get_wallet(user_id)
-        if not wallet or wallet.stars < amount:
-            return False, wallet.stars if wallet else 0
-
+    async def tg_charge_already_processed(self, charge_id: str) -> bool:
+        if not charge_id:
+            return False
+        tag = f"tg_charge:{charge_id}"
         stmt = (
-            update(Wallet)
-            .where(Wallet.user_id == user_id)
-            .values(stars=Wallet.stars - amount)
-            .returning(Wallet.stars)
+            select(Transaction.id)
+            .where(
+                Transaction.type == "tg_stars_topup",
+                Transaction.description == tag,
+            )
+            .limit(1)
         )
-        result = await self.session.execute(stmt)
-        new_balance = result.scalar_one_or_none() or 0
-        await self._save_tx(user_id, -amount, "stars", tx_type, description)
-        await self.session.commit()
-        return True, new_balance
+        res = await self.session.execute(stmt)
+        return res.scalar_one_or_none() is not None
 
-    async def purchase_hearts_with_stars(
+    async def apply_tg_stars_topup(
         self,
         user_id: int,
-        stars_cost: int,
-        hearts_delta: int,
-    ) -> tuple[bool, int, int]:
+        amount: int,
+        charge_id: str,
+    ) -> tuple[bool, int, int, int]:
         """
-        Yulduzdan yurak paketi. (ok, yangi_stars, yangi_hearts).
+        Telegram Stars to'lovi: faqat stars_coin ga qo'shiladi.
+        (yangi_yozuv, stars_coin, gift_tokens, hearts)
         """
         wallet = await self.get_wallet(user_id)
-        if not wallet or wallet.stars < stars_cost:
-            return False, wallet.stars if wallet else 0, wallet.hearts if wallet else 0
+        if not wallet:
+            return False, 0, 0, 0
 
-        new_stars = int(wallet.stars) - stars_cost
-        new_hearts = int(wallet.hearts) + hearts_delta
+        tag = f"tg_charge:{charge_id}"
+        if await self.tg_charge_already_processed(charge_id):
+            return (
+                False,
+                int(wallet.stars_coin or 0),
+                int(wallet.gift_tokens or 0),
+                int(wallet.hearts or 0),
+            )
+
+        amount = int(amount)
+        new_sc = int(wallet.stars_coin or 0) + amount
+        new_gt = int(wallet.gift_tokens or 0)
+        new_hearts = int(wallet.hearts or 0)
 
         await self.session.execute(
             update(Wallet)
             .where(Wallet.user_id == user_id)
-            .values(stars=new_stars, hearts=new_hearts)
+            .values(stars_coin=new_sc)
         )
-        await self._save_tx(
-            user_id, -stars_cost, "stars", "hearts_purchase", f"pack:{stars_cost}"
-        )
-        await self._save_tx(
-            user_id, hearts_delta, "hearts", "hearts_purchase", f"pack:{stars_cost}"
-        )
+        await self._save_tx(user_id, amount, "stars_coin", "tg_stars_topup", tag)
         await self.session.commit()
-        return True, new_stars, new_hearts
+        return True, new_sc, new_gt, new_hearts
 
-    async def purchase_vip_with_stars(
+    async def apply_tg_hearts_product_payment(
         self,
         user_id: int,
-        price_stars: int,
-        bonus_stars: int,
-        extend_days: int,
-    ) -> tuple[bool, int]:
+        hearts: int,
+        stars_paid: int,
+        charge_id: str,
+    ) -> tuple[bool, int, int, int]:
+        """Telegram Stars orqali to'g'ridan-to'g'ri ❤️ paket (hp: payload)."""
+        wallet = await self.get_wallet(user_id)
+        if not wallet:
+            return False, 0, 0, 0
+
+        tag = f"tg_charge:{charge_id}"
+        if await self.tg_charge_already_processed(charge_id):
+            return (
+                False,
+                int(wallet.stars_coin or 0),
+                int(wallet.gift_tokens or 0),
+                int(wallet.hearts or 0),
+            )
+
+        hearts = int(hearts)
+        new_hearts = int(wallet.hearts or 0) + hearts
+        new_sc = int(wallet.stars_coin or 0)
+        new_gt = int(wallet.gift_tokens or 0)
+
+        await self.session.execute(
+            update(Wallet)
+            .where(Wallet.user_id == user_id)
+            .values(hearts=new_hearts)
+        )
+        await self._save_tx(
+            user_id,
+            hearts,
+            "hearts",
+            "tg_hearts_product",
+            f"{tag};stars={int(stars_paid)}",
+        )
+        await self.session.commit()
+        return True, new_sc, new_gt, new_hearts
+
+    async def add_gift_tokens(self, user_id: int, amount: int,
+                              tx_type: str, description: str = "") -> int:
+        stmt = (
+            update(Wallet)
+            .where(Wallet.user_id == user_id)
+            .values(gift_tokens=Wallet.gift_tokens + amount)
+            .returning(Wallet.gift_tokens)
+        )
+        result = await self.session.execute(stmt)
+        new_balance = result.scalar_one_or_none() or 0
+        await self._save_tx(user_id, amount, "gift_tokens", tx_type, description)
+        await self.session.commit()
+        return new_balance
+
+    async def spend_gift_tokens(self, user_id: int, amount: int,
+                                tx_type: str, description: str = "") -> tuple[bool, int]:
+        wallet = await self.get_wallet(user_id)
+        if not wallet or int(wallet.gift_tokens or 0) < amount:
+            return False, int(wallet.gift_tokens or 0) if wallet else 0
+
+        stmt = (
+            update(Wallet)
+            .where(Wallet.user_id == user_id)
+            .values(gift_tokens=Wallet.gift_tokens - amount)
+            .returning(Wallet.gift_tokens)
+        )
+        result = await self.session.execute(stmt)
+        new_balance = result.scalar_one_or_none() or 0
+        await self._save_tx(user_id, -amount, "gift_tokens", tx_type, description)
+        await self.session.commit()
+        return True, new_balance
+
+    async def spend_stars_balance(
+        self,
+        user_id: int,
+        amount: int,
+        tx_type: str,
+        description: str = "",
+    ) -> tuple[bool, int, int]:
         """
-        VIP: yulduz yechish, bonus yulduz, muddatni uzaytirish. (ok, yangi_stars).
+        Stars sarflash: faqat stars_coin dan (gift_tokens tegilmaydi).
+        (ok, yangi_stars_coin, yangi_gift_tokens).
+        """
+        wallet = await self.get_wallet(user_id)
+        if not wallet:
+            return False, 0, 0
+
+        amount = int(amount)
+        sc = int(wallet.stars_coin or 0)
+        gt = int(wallet.gift_tokens or 0)
+        if sc < amount:
+            return False, sc, gt
+
+        new_sc = sc - amount
+
+        await self.session.execute(
+            update(Wallet)
+            .where(Wallet.user_id == user_id)
+            .values(stars_coin=new_sc)
+        )
+        await self._save_tx(
+            user_id, -amount, "stars_coin", tx_type, description or ""
+        )
+        await self.session.commit()
+        return True, new_sc, gt
+
+    async def purchase_hearts_with_gift_tokens(
+        self,
+        user_id: int,
+        token_cost: int,
+        hearts_delta: int,
+    ) -> tuple[bool, int, int, int]:
+        """
+        Yurak paketi: faqat stars_coin dan yechiladi.
+        (ok, yangi_stars_coin, yangi_gift_tokens, yangi_hearts).
+        """
+        wallet = await self.get_wallet(user_id)
+        if not wallet:
+            return False, 0, 0, 0
+
+        sc = int(wallet.stars_coin or 0)
+        gt = int(wallet.gift_tokens or 0)
+        if sc < token_cost:
+            return False, sc, gt, int(wallet.hearts or 0)
+
+        ok, new_sc, new_gt = await self.spend_stars_balance(
+            user_id,
+            token_cost,
+            "hearts_purchase",
+            f"pack:{token_cost}",
+        )
+        if not ok:
+            return False, sc, gt, int(wallet.hearts or 0)
+
+        new_hearts = int(wallet.hearts or 0) + hearts_delta
+        await self.session.execute(
+            update(Wallet)
+            .where(Wallet.user_id == user_id)
+            .values(hearts=new_hearts)
+        )
+        await self._save_tx(
+            user_id, hearts_delta, "hearts", "hearts_purchase", f"pack:{token_cost}"
+        )
+        await self.session.commit()
+        return True, new_sc, new_gt, new_hearts
+
+    async def purchase_vip_with_gift_tokens(
+        self,
+        user_id: int,
+        price_tokens: int,
+        bonus_tokens: int,
+        extend_days: int,
+    ) -> tuple[bool, int, int]:
+        """
+        VIP: faqat stars_coin dan yechiladi; bonus ham stars_coin ga.
+        (ok, yangi_stars_coin, yangi_gift_tokens).
         """
         wallet = await self.get_wallet(user_id)
         user = await self.get_user_with_wallet(user_id)
         if not wallet or not user:
-            return False, wallet.stars if wallet else 0
-        if wallet.stars < price_stars:
-            return False, int(wallet.stars)
+            return False, 0, 0
+
+        sc = int(wallet.stars_coin or 0)
+        gt = int(wallet.gift_tokens or 0)
+        if sc < price_tokens:
+            return False, sc, gt
+
+        ok, new_sc, new_gt = await self.spend_stars_balance(
+            user_id, price_tokens, "vip_purchase", ""
+        )
+        if not ok:
+            return False, sc, gt
 
         now = datetime.now()
         base = now
         if user.vip_expires_at and user.vip_expires_at > now:
             base = user.vip_expires_at
         new_expires = base + timedelta(days=extend_days)
-        new_stars = int(wallet.stars) - price_stars + bonus_stars
+        new_sc = int(new_sc) + int(bonus_tokens)
 
         await self.session.execute(
             update(Wallet)
             .where(Wallet.user_id == user_id)
-            .values(stars=new_stars)
+            .values(stars_coin=new_sc)
         )
-        await self._save_tx(user_id, -price_stars, "stars", "vip_purchase", "")
-        if bonus_stars:
-            await self._save_tx(user_id, bonus_stars, "stars", "vip_bonus", "")
+        if bonus_tokens:
+            await self._save_tx(user_id, bonus_tokens, "stars_coin", "vip_bonus", "")
         await self.session.execute(
             update(User)
             .where(User.id == user_id)
@@ -238,38 +502,38 @@ class GameRepository:
             )
         )
         await self.session.commit()
-        return True, new_stars
+        return True, new_sc, new_gt
 
-    async def convert_stars_coin_to_live(
+    async def convert_stars_coin_to_gift_tokens(
         self,
         user_id: int,
         cost: int,
-        live_delta: int,
+        tokens_delta: int,
     ) -> tuple[bool, int, int]:
         """
-        GM (stars_coin) yechiladi, balance_live (jeton) qo'shiladi.
-        (ok, yangi_stars_coin, yangi_balance_live).
+        GM (stars_coin) yechiladi, gift_tokens qo'shiladi.
+        (ok, yangi_stars_coin, yangi_gift_tokens).
         """
         wallet = await self.get_wallet(user_id)
         if not wallet or int(wallet.stars_coin or 0) < cost:
             return (
                 False,
                 int(wallet.stars_coin or 0) if wallet else 0,
-                int(wallet.balance_live or 0) if wallet else 0,
+                int(wallet.gift_tokens or 0) if wallet else 0,
             )
         new_sc = int(wallet.stars_coin) - cost
-        new_live = int(wallet.balance_live or 0) + live_delta
+        new_gt = int(wallet.gift_tokens or 0) + tokens_delta
         await self.session.execute(
             update(Wallet)
             .where(Wallet.user_id == user_id)
-            .values(stars_coin=new_sc, balance_live=new_live)
+            .values(stars_coin=new_sc, gift_tokens=new_gt)
         )
-        await self._save_tx(user_id, -cost, "stars", "jeton_convert", f"gm:{cost}")
+        await self._save_tx(user_id, -cost, "stars_coin", "gm_to_gift_tokens", f"gm:{cost}")
         await self._save_tx(
-            user_id, live_delta, "stars", "jeton_convert", f"live+:{live_delta}"
+            user_id, tokens_delta, "gift_tokens", "gm_to_gift_tokens", f"gt+:{tokens_delta}"
         )
         await self.session.commit()
-        return True, new_sc, new_live
+        return True, new_sc, new_gt
 
     async def _save_tx(self, user_id: int, amount: int,
                        currency: str, tx_type: str, description: str):
@@ -290,7 +554,7 @@ class GameRepository:
         """
         Statistikani qo'shadi (UserStats va User modelida).
         category: 'kisses' | 'dj' | 'expense' | 'importance' | 'emotion' |
-            'compliment' | 'bottle_spin' (User jadvalida ustun bo'lmasa faqat UserStats)
+            'compliment' | 'bottle_spin' | 'donjuan' (Userda ustun bo'lmasa — faqat UserStats)
         """
         # 1. UserStats (Detailed) yangilash
         stmt = select(UserStats).where(
@@ -454,9 +718,13 @@ class GameRepository:
         return {r.key: int(r.level or 0) for r in rows if r.key}
 
     async def upsert_user_achievement(
-        self, user_id: int, key: str, level: int
+        self, user_id: int, key: str, level: int, *, exact: bool = False
     ) -> None:
-        """Foydalanuvchining yutiq darajasini saqlaydi (yangilash yoki yaratish)."""
+        """Foydalanuvchining yutiq darajasini saqlaydi (yangilash yoki yaratish).
+
+        exact=True: daraja statistikadan kelgan qiymatga majburan tenglanadi
+        (masalan, donjuan — eski noto'g'ri DB darajasini tushirish).
+        """
         ach = await self._get_or_create_achievement(key)
         stmt = select(UserAchievement).where(
             UserAchievement.user_id == user_id,
@@ -464,10 +732,16 @@ class GameRepository:
         )
         ua = (await self.session.execute(stmt)).scalar_one_or_none()
         if ua:
-            if (ua.level or 0) < level:
+            if exact:
+                if level <= 0:
+                    await self.session.delete(ua)
+                else:
+                    ua.level = level
+                    ua.status = "completed"
+            elif (ua.level or 0) < level:
                 ua.level = level
                 ua.status = "completed"
-        else:
+        elif level > 0:
             ua = UserAchievement(
                 user_id=user_id,
                 achievement_id=ach.id,
@@ -577,6 +851,7 @@ class GameRepository:
     async def append_table_chat_message(
         self, table_id: int, user_id: str, username: str, body: str
     ) -> None:
+        """user_id — barqaror db_id (mavjud bo'lsa), aks holda WS player.id."""
         self.session.add(
             TableChatMessage(
                 table_id=table_id,

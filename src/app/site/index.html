@@ -1,3 +1,5 @@
+<!DOCTYPE html>
+<html lang="ru">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
@@ -8,18 +10,107 @@
   <link rel="apple-touch-icon" sizes="180x180" href="./favicon/apple-touch-icon.png" />
   <link rel="manifest" href="./favicon/site.webmanifest" />
   <script src="https://telegram.org/js/telegram-web-app.js?59"></script>
-  <script type="module" crossorigin src="./assets/index-1776688741387-BUz5E6og.js?v=3"></script>
-  <link rel="modulepreload" crossorigin href="./assets/vendor-1776688741387-ChdSrS24.js?v=3">
-  <link rel="modulepreload" crossorigin href="./assets/pixi-1776688741387-DhpI4S0T.js?v=3">
-  <link rel="stylesheet" crossorigin href="./assets/index-lvMCeiw6.css?v=3">
+  <link rel="modulepreload" crossorigin href="./assets/vendor-1776688741387-ChdSrS24.js?v=6">
+  <link rel="modulepreload" crossorigin href="./assets/pixi-1776688741387-DhpI4S0T.js?v=6">
+  <link rel="stylesheet" crossorigin href="./assets/index-lvMCeiw6.css?v=6">
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #1a2a3a; }
+    #app-boot-loader {
+      position: fixed; inset: 0; z-index: 999999;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: #1a2a3a; color: #fff; font-family: system-ui, sans-serif; font-size: 15px;
+    }
+    #app-boot-loader .spin {
+      width: 40px; height: 40px; border: 3px solid rgba(255,255,255,.2);
+      border-top-color: #97ca31; border-radius: 50%; animation: bootspin .8s linear infinite;
+      margin-bottom: 16px;
+    }
+    @keyframes bootspin { to { transform: rotate(360deg); } }
+    .game-ticket-button, .mole-ticket-button, .buy-ticket-button,
+    .percent-bonus, [class*="percent-bonus"], .percent-bonus__image-ticket,
+    .percent-bonus__clickable, [class*="percent-bonus_x_popup"],
+    .tickets, [class*="tickets_x_popup"], [class*="tickets__"],
+    .reward__item--ticket, .bank__image--sale-day, .bank__percent-bonus {
+      display: none !important;
+      visibility: hidden !important;
+      pointer-events: none !important;
+      opacity: 0 !important;
+    }
+  </style>
 </head>
-
 <body>
+  <div id="app-boot-loader">
+    <div class="spin"></div>
+    <div id="boot-status">Yuklanmoqda...</div>
+  </div>
   <div id="root"></div>
-  <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516"
-    integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg=="
-    data-cf-beacon='{"version":"2024.11.0","token":"8d9de90fcf4d46a2988e40812835d04c","r":1,"server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}'
-    crossorigin="anonymous"></script>
+
+  <script src="./static/tg_auto_auth.js?v=16"></script>
+  <script src="./static/youtube_embed_fix.js?v=1"></script>
+  <script>
+    (function () {
+      var statusEl = document.getElementById("boot-status");
+      var loaderEl = document.getElementById("app-boot-loader");
+      function setStatus(msg) { if (statusEl) statusEl.textContent = msg; }
+      function hideLoader() {
+        if (loaderEl) loaderEl.style.display = "none";
+      }
+      function goGame(redirectUrl) {
+        if (window.TgAutoAuth && window.TgAutoAuth.goToGame(redirectUrl)) {
+          return true;
+        }
+        if (redirectUrl) {
+          var t = redirectUrl.charAt(0) === "/" ? location.origin + redirectUrl : redirectUrl;
+          location.replace(t);
+          return true;
+        }
+        return false;
+      }
+      function loadGameBundle() {
+        setStatus("O'yin yuklanmoqda...");
+        var s = document.createElement("script");
+        s.type = "module";
+        s.crossOrigin = "anonymous";
+        s.src = "./assets/index-1776688741387-BUz5E6og.js?v=31";
+        s.onload = function () { setTimeout(hideLoader, 1500); };
+        s.onerror = function () { setStatus("JS yuklanmadi. Serverni qayta ishga tushiring."); };
+        document.head.appendChild(s);
+      }
+      function hasGameSessionInUrl() {
+        return /[?&]user_id=/.test(location.search || "");
+      }
+      function bootGame() {
+        try {
+          if (window.Telegram && window.Telegram.WebApp) {
+            window.Telegram.WebApp.ready();
+            window.Telegram.WebApp.expand();
+          }
+        } catch (e) { /* ignore */ }
+
+        if (hasGameSessionInUrl()) {
+          loadGameBundle();
+          return;
+        }
+        setStatus("Telegram orqali kirish...");
+        var forceTg = !!(window.Telegram && window.Telegram.WebApp);
+        window.TgAutoAuth.run({ forceTelegram: forceTg }).then(function (res) {
+          if (res && res.ok && res.redirectUrl) {
+            goGame(res.redirectUrl);
+            return;
+          }
+          var tgUser = window.Telegram && window.Telegram.WebApp &&
+            window.Telegram.WebApp.initDataUnsafe &&
+            window.Telegram.WebApp.initDataUnsafe.user;
+          if (tgUser) {
+            setStatus("Kirish xatosi. Qayta urinib ko'ring.");
+          } else {
+            setStatus("Ilovani Telegram orqali oching.");
+          }
+        });
+      }
+      bootGame();
+    })();
+  </script>
 
   <style>
     .stars-icon,
@@ -34,7 +125,99 @@
       object-fit: contain !important;
       pointer-events: none !important;
     }
+    .ref-toast {
+      position: fixed;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: rgba(0,0,0,0.85);
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-family: Arial, sans-serif;
+      z-index: 99999;
+      opacity: 0;
+      transition: all 0.3s ease;
+      pointer-events: none;
+      backdrop-filter: blur(8px);
+    }
+    .ref-toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
   </style>
+
+  <div id="ref-toast" class="ref-toast"></div>
+
+  <script>
+    (function() {
+      document.addEventListener('click', function (e) {
+          const logoutBtn = e.target.closest('.logout-button');
+          if (logoutBtn) {
+              const token = localStorage.getItem('accessToken');
+              fetch('/api/auth/logout', {
+                  method: 'GET',
+                  headers: { 'Authorization': 'Bearer ' + token }
+              }).finally(() => {
+                  localStorage.clear();
+                  sessionStorage.clear();
+                  window.location.href = '/';
+              });
+          }
+      });
+
+      const BOT_URL = 'https://t.me/SpinbottleTgBot/spin_bottle';
+      let referralId = null;
+
+      function showToast(msg) {
+          const t = document.getElementById('ref-toast');
+          if (!t) return;
+          t.textContent = msg;
+          t.classList.add('show');
+          setTimeout(() => t.classList.remove('show'), 3000);
+      }
+
+      function fetchReferralData() {
+          const token = localStorage.getItem('accessToken');
+          fetch('/frames/referrals', {
+              headers: { 'Authorization': `Bearer ${token}` }
+          })
+          .then(r => r.json())
+          .then(data => {
+              if (data.success) referralId = data.referral_id;
+          });
+      }
+
+      function shareReferral() {
+          if (!referralId) {
+              showToast("Havola yuklanmoqda...");
+              fetchReferralData();
+              return;
+          }
+          const shareUrl = `${BOT_URL}?startapp=${referralId}`;
+          const shareText = "Please help me get a free airdrop up to $1 worth.\nYou just need to collect 50 kisses in this game on Telegram.";
+          if (window.Telegram && window.Telegram.WebApp) {
+              const tgUrl = `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(shareText)}`;
+              window.Telegram.WebApp.openTelegramLink(tgUrl);
+          } else {
+              navigator.clipboard.writeText(shareUrl).then(() => showToast("Havola nusxalandi!"));
+          }
+      }
+
+      document.body.addEventListener('click', (e) => {
+          const inviteBtn = e.target.closest('.settings__item--selectable');
+          if (inviteBtn && inviteBtn.querySelector('.settings__icon--invite')) {
+              e.preventDefault();
+              e.stopPropagation();
+              shareReferral();
+          }
+      });
+
+      setTimeout(fetchReferralData, 3000);
+    })();
+  </script>
+
   <script id="stars-observer">
     (function () {
       const targetImg = '/images/stars.png';
@@ -55,7 +238,6 @@
             span.style.display = 'inline-flex';
             span.style.alignItems = 'center';
             span.style.verticalAlign = 'middle';
-
             const parts = textNode.nodeValue.split('STARS');
             parts.forEach((part, index) => {
               span.appendChild(document.createTextNode(part));
@@ -74,11 +256,23 @@
           }
         });
       }
-      const observer = new MutationObserver((mutations) => {
-        replaceStars();
-      });
+      const observer = new MutationObserver(() => replaceStars());
       observer.observe(document.body, { childList: true, subtree: true });
       replaceStars();
     })();
+    (function () {
+      var hideSel = ".percent-bonus,[class*='percent-bonus'],.percent-bonus__image-ticket,.tickets,[class*='tickets_x_popup'],[class*='tickets__'],.reward__item--ticket";
+      function hideTicketPromo() {
+        document.querySelectorAll(hideSel).forEach(function (el) {
+          el.style.setProperty("display", "none", "important");
+          el.style.setProperty("visibility", "hidden", "important");
+          el.style.setProperty("pointer-events", "none", "important");
+          el.style.setProperty("opacity", "0", "important");
+        });
+      }
+      hideTicketPromo();
+      new MutationObserver(hideTicketPromo).observe(document.documentElement, { childList: true, subtree: true });
+    })();
   </script>
 </body>
+</html>

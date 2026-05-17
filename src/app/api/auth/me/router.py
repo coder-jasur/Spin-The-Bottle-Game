@@ -1,15 +1,57 @@
+import logging
 import os
 import shutil
+from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
+from typing import Optional
+
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.app.api.auth.user_payload import game_display_name
 from src.app.api.ws.player import parse_birth_date_ms
 from src.app.core.jwt import verify_access_token
 from src.app.database.repositories.user import UserRepository
+from src.app.services.telegram_profile import _PHOTOS_DIR, _is_valid_image_bytes
 
 router = APIRouter(tags=["Me"])
+log = logging.getLogger("spinbottle")
+
+
+def _resolve_auth_payload(request: Request) -> Optional[dict]:
+    """Bearer (odatda localStorage) + cookie — eskirgan Bearer bo'lsa cookie bilan davom etadi."""
+    import json
+    import urllib.parse
+
+    tokens: list[str] = []
+    auth = request.headers.get("Authorization") or ""
+    if auth.startswith("Bearer "):
+        t = auth.replace("Bearer ", "", 1).strip()
+        if t:
+            tokens.append(t)
+    for key in ("device_user_ids", "accessToken"):
+        v = request.cookies.get(key)
+        if not v:
+            continue
+        s = str(v).strip()
+        if s and s not in tokens:
+            tokens.append(s)
+    if not tokens:
+        return None
+    for token in tokens:
+        p = verify_access_token(token)
+        if p:
+            return p
+        try:
+            decoded = urllib.parse.unquote(token)
+            if decoded.startswith("[") and decoded.endswith("]"):
+                ids = json.loads(decoded)
+                if isinstance(ids, list) and ids:
+                    return {"id": int(ids[0])}
+        except Exception:
+            pass
+    return None
 
 
 async def get_db(request: Request) -> AsyncSession:
@@ -33,34 +75,10 @@ async def get_db(request: Request) -> AsyncSession:
 @router.get("/auth/profile")
 async def get_me(
     request: Request,
-    authorization: str = Header(None),
     session: AsyncSession = Depends(get_db),
 ):
-    token = None
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.replace("Bearer ", "")
-    if not token:
-        token = request.cookies.get("device_user_ids")
-
-    if not token:
-        raise HTTPException(status_code=401, detail="No authorization found")
-
     try:
-        payload = verify_access_token(token) if token else None
-
-        # FALLBACK: Legacy cookie format [user_id]
-        if not payload and token:
-            try:
-                import json
-                import urllib.parse
-                decoded = urllib.parse.unquote(token)
-                if decoded.startswith("[") and decoded.endswith("]"):
-                    ids = json.loads(decoded)
-                    if isinstance(ids, list) and len(ids) > 0:
-                        payload = {"id": int(ids[0])}
-            except:
-                pass
-
+        payload = _resolve_auth_payload(request)
         if not payload:
             raise HTTPException(status_code=401, detail="Invalid token")
 
@@ -107,22 +125,44 @@ async def get_me(
         elif user.gender == "male":
             gender_display = "Kişi"
 
+        lb = user.last_bonus_claimed_at
+        try:
+            if lb is None:
+                can_claim_bonus = 1
+            elif hasattr(lb, "date"):
+                can_claim_bonus = (
+                    1 if datetime.now().date() > lb.date() else 0
+                )
+            else:
+                can_claim_bonus = 1
+        except Exception:
+            can_claim_bonus = 0
+
+        gift_bal = 0
+        if user.wallet is not None:
+            gift_bal = int(user.wallet.gift_tokens or 0)
+
         return {
-            "game_username": user.username or user.display_name or user.login or f"user_{user.id}",
+            "game_username": game_display_name(user),
             "status": user.status_text or None,
             "birthday_ts": birthday_ts,
-            "balance": user.wallet.stars if user.wallet else 0,
-            "gift_tokens": user.wallet.gift_tokens if user.wallet else 0,
+            "balance": gift_bal,
+            "gift_tokens": gift_bal,
             "daily_streak": user.daily_streak,
-            "can_claim_bonus": 1 if (not user.last_bonus_claimed_at or datetime.now().date() > user.last_bonus_claimed_at.date()) else 0,
+            "can_claim_bonus": can_claim_bonus,
             "gender": gender_display,
-            "add_balance": 1, 
-            "free_profile_used": user.username_change_count 
+            "add_balance": 1,
+            "free_profile_used": int(user.username_change_count or 0),
+            "profile_picture": user.avatar_url or None,
         }
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Error: {str(e)}")
+        log.exception("get_me: profil yuklash xatosi (auth emas): %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Profile load error: {str(e)}",
+        )
 
 
 @router.post("/api/auth/update-password")
@@ -132,22 +172,7 @@ async def get_me(
 async def update_password(
     request: Request, data: dict, session: AsyncSession = Depends(get_db)
 ):
-    token = request.cookies.get("device_user_ids")
-    payload = verify_access_token(token) if token else None
-
-    # FALLBACK: ["user_id"] formatini tekshirish
-    if not payload and token:
-        try:
-            import urllib.parse
-            import json
-            decoded = urllib.parse.unquote(token)
-            if decoded.startswith("[") and decoded.endswith("]"):
-                ids = json.loads(decoded)
-                if isinstance(ids, list) and len(ids) > 0:
-                    try:
-                        payload = {"id": int(ids[0])}
-                    except: pass
-        except: pass
+    payload = _resolve_auth_payload(request)
 
     if not payload:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -173,22 +198,7 @@ async def update_password(
 async def update_game_username(
     request: Request, data: dict, session: AsyncSession = Depends(get_db)
 ):
-    token = request.cookies.get("device_user_ids")
-    payload = verify_access_token(token) if token else None
-
-    # FALLBACK: ["user_id"] formatini tekshirish
-    if not payload and token:
-        try:
-            import urllib.parse
-            import json
-            decoded = urllib.parse.unquote(token)
-            if decoded.startswith("[") and decoded.endswith("]"):
-                ids = json.loads(decoded)
-                if isinstance(ids, list) and len(ids) > 0:
-                    try:
-                        payload = {"id": int(ids[0])}
-                    except: pass
-        except: pass
+    payload = _resolve_auth_payload(request)
 
     if not payload:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -199,10 +209,10 @@ async def update_game_username(
         raise HTTPException(status_code=404, detail="User not found")
 
     if "game_username" in data:
-        # Agar yangi ism eski ismdan farq qilsa, hisoblagichni oshiramiz
-        if user.username != data["game_username"]:
-            user.username = data["game_username"]
-            user.username_change_count += 1
+        new_name = str(data["game_username"]).strip().lstrip("@")[:30]
+        if new_name and user.username != new_name:
+            user.username = new_name
+            user.username_change_count = int(user.username_change_count or 0) + 1
     if "status" in data:
         user.status_text = data["status"]
     if "birth_date" in data:
@@ -233,22 +243,7 @@ async def update_game_username(
 async def update_gender(
     request: Request, data: dict, session: AsyncSession = Depends(get_db)
 ):
-    token = request.cookies.get("device_user_ids")
-    payload = verify_access_token(token) if token else None
-
-    # FALLBACK: ["user_id"] formatini tekshirish
-    if not payload and token:
-        try:
-            import urllib.parse
-            import json
-            decoded = urllib.parse.unquote(token)
-            if decoded.startswith("[") and decoded.endswith("]"):
-                ids = json.loads(decoded)
-                if isinstance(ids, list) and len(ids) > 0:
-                    try:
-                        payload = {"id": int(ids[0])}
-                    except: pass
-        except: pass
+    payload = _resolve_auth_payload(request)
 
     if not payload:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -296,22 +291,7 @@ async def update_profile_picture(
     profile_picture: UploadFile = File(...),
     session: AsyncSession = Depends(get_db),
 ):
-    token = request.cookies.get("device_user_ids")
-    payload = verify_access_token(token) if token else None
-
-    # FALLBACK: ["user_id"] formatini tekshirish
-    if not payload and token:
-        try:
-            import urllib.parse
-            import json
-            decoded = urllib.parse.unquote(token)
-            if decoded.startswith("[") and decoded.endswith("]"):
-                ids = json.loads(decoded)
-                if isinstance(ids, list) and len(ids) > 0:
-                    try:
-                        payload = {"id": int(ids[0])}
-                    except (ValueError, TypeError): pass
-        except: pass
+    payload = _resolve_auth_payload(request)
 
     if not payload:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -321,12 +301,8 @@ async def update_profile_picture(
         import time
         timestamp = int(time.time())
         
-        # Rasmni saqlash yo'li
-        base_dir = Path(__file__).parent.parent.parent.parent.parent.parent.resolve()
-        photos_dir = base_dir / "src" / "app" / "site" / "media" / "photos"
-        
-        if not photos_dir.exists():
-            os.makedirs(photos_dir, exist_ok=True)
+        photos_dir = _PHOTOS_DIR
+        photos_dir.mkdir(parents=True, exist_ok=True)
             
         user_repo = UserRepository(session)
         user = await user_repo.get_user_by_id(user_id)
@@ -344,12 +320,20 @@ async def update_profile_picture(
             except Exception as e:
                 print(f">>> Eski rasmni o'chirishda xato: {e}")
 
-        # YANGI RASMNI SAQLASH
-        file_name = f"user_{user_id}_{timestamp}.png"
+        raw = await profile_picture.read()
+        if not _is_valid_image_bytes(raw):
+            raise HTTPException(
+                status_code=400,
+                detail="Fayl rasm emas (JPEG/PNG/WEBP kerak)",
+            )
+        ext = ".jpg"
+        if raw[:8] == b"\x89PNG\r\n\x1a\n":
+            ext = ".png"
+        elif raw[:4] == b"RIFF" and b"WEBP" in raw[:16]:
+            ext = ".webp"
+        file_name = f"user_{user_id}_{timestamp}{ext}"
         file_path = photos_dir / file_name
-        
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(profile_picture.file, buffer)
+        file_path.write_bytes(raw)
             
         # User modelini yangilash
         user.avatar_url = f"/photos/{file_name}"

@@ -1,0 +1,384 @@
+# Uzbek translations for PROJECT.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the PROJECT project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-05-16 14:52+0500\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: uz\n"
+"Language-Team: uz <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+msgid ""
+"Hey! Get ready to dive into the ultimate Spin the Bottle adventure.\n"
+"\n"
+"👀 See who's around you and start a conversation\n"
+"🎁 Exchange fun surprises and playful dares\n"
+"💌 Send hidden messages to someone special\n"
+"🎲 Enjoy entertaining games together in the room\n"
+"🎶 Play along with music in the background\n"
+"\n"
+"🎮 Tap PLAY and let the fun start!\n"
+"\n"
+"⭐ Buy Stars: /store"
+msgstr ""
+"Salom! Spin the Bottle sarguzashtiga tayyormisiz?\n"
+"\n"
+"👀 Atrofingizdagi odamlarni ko'ring va suhbat boshlang\n"
+"🎁 Qiziqarli sovg'alar va o'yin-kulgi almashing\n"
+"💌 Maxsus kishiga yashirin xabar yuboring\n"
+"🎲 Xonada birgalikda o'yinlar o'ynang\n"
+"🎶 Fon musiqasi bilan o'ynang\n"
+"\n"
+"🎮 PLAY bosing va zavqlaning!\n"
+"\n"
+"⭐ Stars sotib olish: /store"
+
+msgid "Mini App is not configured yet. Set TELEGRAM_WEBAPP_URL in .env."
+msgstr "Mini App hali sozlanmagan. TELEGRAM_WEBAPP_URL ni .env da kiriting."
+
+msgid "🎮 PLAY"
+msgstr "🎮 PLAY"
+
+msgid "⭐ Stars store"
+msgstr "⭐ Stars do'kon"
+
+msgid ""
+"⭐ <b>Stars store</b>\n"
+"\n"
+"Choose a package or <b>Custom amount</b> to enter your own value.\n"
+"After payment, the same number of ★ Stars will be added to your balance.\n"
+"\n"
+"Select a package or amount — Telegram invoice will arrive."
+msgstr ""
+"⭐ <b>Stars do'kon</b>\n"
+"\n"
+"Paket tanlang yoki <b>Boshqa summa</b> — o'zingiz xohlagan miqdorni "
+"kiriting.\n"
+"To'lovdan keyin shuncha ★ Stars hisobingizga qo'shiladi.\n"
+"\n"
+"Paket yoki summa tanlang — Telegram chek keladi."
+
+#, python-format
+msgid "Current balance: <b>%(sc)s</b> ★ Stars"
+msgstr "Joriy balans: <b>%(sc)s</b> ★ Stars"
+
+#, python-format
+msgid "Gift tokens: <b>%(gt)s</b>"
+msgstr "Sovg'a tokenlar: <b>%(gt)s</b>"
+
+msgid "Open the game first: /start → PLAY, then send /store again."
+msgstr "Avval o'yinga kiring: /start → PLAY tugmasi, keyin qayta /store yozing."
+
+msgid "✏️ Custom amount"
+msgstr "✏️ Boshqa summa"
+
+#, python-format
+msgid ""
+"How many ★ Stars do you want?\n"
+"Send a number (e.g. <code>150</code>).\n"
+"Range: %(min)s — %(max)s\n"
+"\n"
+"Cancel: /store"
+msgstr ""
+"Qancha ★ Stars xohlaysiz?\n"
+"Raqam yuboring (masalan: <code>150</code>).\n"
+"Oraliq: %(min)s — %(max)s\n"
+"\n"
+"Bekor qilish: /store"
+
+#, python-format
+msgid ""
+"Send a whole number only (e.g. 100).\n"
+"%(err)s"
+msgstr ""
+"Faqat butun son yuboring (masalan: 100).\n"
+"%(err)s"
+
+#, python-format
+msgid "Amount must be a whole number from %(min)s to %(max)s."
+msgstr "Miqdor %(min)s dan %(max)s gacha butun son bo'lishi kerak."
+
+msgid "Open the game first: /start → PLAY"
+msgstr "Avval o'yinni oching: /start → PLAY"
+
+#, python-format
+msgid "✅ Invoice for %(stars)s ★ sent — confirm payment."
+msgstr "✅ %(stars)s ★ uchun chek yuborildi — to'lovni tasdiqlang."
+
+msgid ""
+"Invoice was not sent. Check that you have not blocked the bot, or try "
+"again later."
+msgstr ""
+"Chek yuborilmadi. Botni bloklamaganingizni tekshiring yoki biroz kutib "
+"qayta urinib ko'ring."
+
+msgid "Invalid package"
+msgstr "Noto'g'ri paket"
+
+msgid "This package is not available"
+msgstr "Bu paket mavjud emas"
+
+msgid "Open the game first (/start → PLAY)"
+msgstr "Avval o'yinni oching (/start → PLAY)"
+
+msgid "Invoice sent — confirm payment"
+msgstr "Chek yuborildi — to'lovni tasdiqlang"
+
+msgid ""
+"Invoice was not sent. Make sure the bot is not blocked in Telegram, or "
+"try /start again."
+msgstr ""
+"Chek yuborilmadi. Telegramda botni bloklamaganingizni tekshiring yoki "
+"/start yozib qayta urinib ko'ring."
+
+msgid "Invalid order"
+msgstr "Buyurtma yaroqsiz"
+
+#, python-format
+msgid ""
+"✅ Payment received: +%(paid)s ★\n"
+"Current balance: %(sc)s ★ Stars\n"
+"You can return to the game and continue shopping."
+msgstr ""
+"✅ To'lov qabul qilindi: +%(paid)s ★\n"
+"Joriy balans: %(sc)s ★ Stars\n"
+"O'yinga qaytib xaridni davom ettirishingiz mumkin."
+
+msgid ""
+"⭐ <b>Spin Bottle</b>\n"
+"Top up Telegram Stars — then return to the game to shop."
+msgstr ""
+"⭐ <b>Spin Bottle</b>\n"
+"Telegram Stars to'ldiring — keyin o'yinga qaytib xarid qiling."
+
+#, python-format
+msgid "Spin Bottle — %(stars)s ★"
+msgstr "Spin Bottle — %(stars)s ★"
+
+#, python-format
+msgid ""
+"%(stars)s Stars will be added to your account. After payment you can "
+"return to the game."
+msgstr ""
+"Hisobingizga %(stars)s Telegram Stars qo'shiladi. To'lovdan keyin o'yinga"
+" qaytib xarid qilishingiz mumkin."
+
+#, python-format
+msgid "%(stars)s Telegram Stars top-up"
+msgstr "%(stars)s Telegram Stars to'ldirish"
+
+#, python-format
+msgid "%(stars)s Stars"
+msgstr "%(stars)s Stars"
+
+msgid "🎮 Play"
+msgstr "🎮 O'yna"
+
+msgid "🎮 Start the game"
+msgstr "🎮 O'yinni boshlash"
+
+msgid "⭐ Buy Stars"
+msgstr "⭐ Stars sotib olish"
+
+#, python-format
+msgid "Hello %(victim)s! %(new_owner)s took %(target)s away from your court."
+msgstr ""
+"Salom %(victim)s! %(new_owner)s %(target)s ni sizning uxajorligingizdan "
+"o'ziga oldi."
+
+msgid "🛠 Admin panel"
+msgstr "🛠 Admin panel"
+
+msgid "🛠 <b>Admin panel</b>\n\nChoose an action:"
+msgstr "🛠 <b>Admin panel</b>\n\nAmalni tanlang:"
+
+msgid "📥 Create DB backup"
+msgstr "📥 DB bekapi olish"
+
+msgid "📤 Restore from backup"
+msgstr "📤 Bekapdan tiklash"
+
+msgid "⛔ Access denied."
+msgstr "⛔ Kirish taqiqlangan."
+
+msgid "⏳ Creating backup, please wait…"
+msgstr "⏳ Bekap yaratilmoqda, kuting…"
+
+#, python-format
+msgid "✅ Backup ready.\nTables: <b>%(tables)s</b>\nRows: <b>%(rows)s</b>"
+msgstr ""
+"✅ Bekap tayyor.\nJadvallar: <b>%(tables)s</b>\nQatorlar: <b>%(rows)s</b>"
+
+msgid ""
+"📤 Send the backup file as a <b>document</b> (<code>.json.gz</code> or "
+"<code>.json</code>)."
+msgstr ""
+"📤 Bekap faylini <b>hujjat</b> sifatida yuboring (<code>.json.gz</code> yoki "
+"<code>.json</code>)."
+
+#, python-format
+msgid ""
+"📂 Backup loaded.\nTables: <b>%(tables)s</b>, rows: <b>%(rows)s</b>\n\n"
+"Choose restore mode:"
+msgstr ""
+"📂 Bekap yuklandi.\nJadvallar: <b>%(tables)s</b>, qatorlar: <b>%(rows)s</b>\n\n"
+"Tiklash usulini tanlang:"
+
+msgid "➕ Restore missing rows only"
+msgstr "➕ Faqat yo'q qatorlarni tiklash"
+
+msgid "⚠️ Full DB replace"
+msgstr "⚠️ To'liq DB almashtirish"
+
+msgid "❌ Cancel"
+msgstr "❌ Bekor qilish"
+
+#, python-format
+msgid "✅ Merge complete. Rows added: <b>%(inserted)s</b>"
+msgstr "✅ Birlashtirish tugadi. Qo'shilgan qatorlar: <b>%(inserted)s</b>"
+
+#, python-format
+msgid "✅ Full restore complete. Rows restored: <b>%(rows)s</b>"
+msgstr "✅ To'liq tiklash tugadi. Qatorlar: <b>%(rows)s</b>"
+
+#, python-format
+msgid "❌ Restore failed: %(error)s"
+msgstr "❌ Tiklash xatosi: %(error)s"
+
+msgid "❌ Invalid backup file."
+msgstr "❌ Noto'g'ri bekap fayli."
+
+msgid ""
+"⚠️ <b>Full replace</b> will erase current database data and load the backup. "
+"Continue?"
+msgstr ""
+"⚠️ <b>To'liq almashtirish</b> joriy DB ma'lumotlarini o'chirib, bekapni "
+"yuklaydi. Davom etasizmi?"
+
+msgid "⚠️ Yes, replace all"
+msgstr "⚠️ Ha, hammasini almashtirish"
+
+msgid "Cancelled."
+msgstr "Bekor qilindi."
+
+msgid "🤝 Referral & partners"
+msgstr "🤝 Referal va hamkorlar"
+
+msgid "🤝 <b>Referral & partners</b>\n\nChoose:"
+msgstr "🤝 <b>Referal va hamkorlar</b>\n\nTanlang:"
+
+msgid "📋 Partner list"
+msgstr "📋 Hamkorlar ro'yxati"
+
+msgid "➕ Add partner"
+msgstr "➕ Hamkor qo'shish"
+
+msgid "⚙️ Default referral bonus"
+msgstr "⚙️ Oddiy referal bonusi"
+
+msgid "◀️ Back"
+msgstr "◀️ Orqaga"
+
+msgid "No partners yet."
+msgstr "Hali hamkorlar yo'q."
+
+#, python-format
+msgid "<b>Partners</b> (%(count)s):"
+msgstr "<b>Hamkorlar</b> (%(count)s):"
+
+#, python-format
+msgid ""
+"• <code>%(code)s</code> — %(name)s\n"
+"  bonus: <b>%(bonus)s</b> | limit/day: <b>%(limit)s</b>\n"
+"  guests: <b>%(guests)s</b> | today: <b>%(today)s</b>/%(limit)s"
+msgstr ""
+"• <code>%(code)s</code> — %(name)s\n"
+"  bonus: <b>%(bonus)s</b> | limit/kun: <b>%(limit)s</b>\n"
+"  mehmonlar: <b>%(guests)s</b> | bugun: <b>%(today)s</b>/%(limit)s"
+
+#, python-format
+msgid ""
+"<b>Partner</b> #%(id)s\n"
+"User: <b>%(user_id)s</b> %(name)s\n"
+"Code: <code>%(code)s</code>\n"
+"Per invite: <b>%(bonus)s</b> hearts\n"
+"Daily limit: <b>%(limit)s</b>\n"
+"Invited guests: <b>%(guests)s</b>\n"
+"Earned today: <b>%(today)s</b>\n"
+"Status: %(status)s"
+msgstr ""
+"<b>Hamkor</b> #%(id)s\n"
+"Foydalanuvchi: <b>%(user_id)s</b> %(name)s\n"
+"Kod: <code>%(code)s</code>\n"
+"Har taklif: <b>%(bonus)s</b> hearts\n"
+"Kunlik limit: <b>%(limit)s</b>\n"
+"Chaqirilganlar: <b>%(guests)s</b>\n"
+"Bugun olingan: <b>%(today)s</b>\n"
+"Holat: %(status)s"
+
+#, python-format
+msgid ""
+"<b>Default referral</b> (regular users)\n"
+"Per invite: <b>%(bonus)s</b> hearts\n"
+"Daily limit: <b>%(limit)s</b>"
+msgstr ""
+"<b>Oddiy referal</b> (hamkor emas)\n"
+"Har taklif: <b>%(bonus)s</b> hearts\n"
+"Kunlik limit: <b>%(limit)s</b>"
+
+msgid "✏️ Per-invite bonus"
+msgstr "✏️ Taklif bonusi"
+
+msgid "✏️ Daily limit"
+msgstr "✏️ Kunlik limit"
+
+msgid "🔛 Toggle active"
+msgstr "🔛 Faollik"
+
+msgid "✅ Saved."
+msgstr "✅ Saqlandi."
+
+#, python-format
+msgid "❌ Error: %(error)s"
+msgstr "❌ Xato: %(error)s"
+
+msgid "Send partner user id, Telegram id, or login/username:"
+msgstr "Hamkor user id, Telegram id yoki login yuboring:"
+
+msgid ""
+"Send referral <b>partner code</b> (or <code>-</code> to use user's code):"
+msgstr ""
+"Referal <b>hamkor kodi</b> yuboring (<code>-</code> — foydalanuvchi kodi):"
+
+msgid "Send hearts per invite (integer):"
+msgstr "Har taklif uchun hearts (butun son):"
+
+msgid "Send daily hearts limit (integer, 0 = unlimited):"
+msgstr "Kunlik hearts limiti (0 = cheksiz):"
+
+msgid "User not found."
+msgstr "Foydalanuvchi topilmadi."
+
+msgid "Deactivate"
+msgstr "O'chirish"
+
+msgid "Activate"
+msgstr "Yoqish"
+
+msgid "Active"
+msgstr "Faol"
+
+msgid "Inactive"
+msgstr "Nofaol"
+

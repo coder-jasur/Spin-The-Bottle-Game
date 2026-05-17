@@ -159,6 +159,15 @@
             box-shadow: 0 15px 35px #0000007a;
             background: linear-gradient(180deg, #ffc48c, #f2a96f);
         }
+
+        .game-ticket-button, .mole-ticket-button, .buy-ticket-button,
+        .percent-bonus, [class*="percent-bonus"], .percent-bonus__image-ticket,
+        .tickets, [class*="tickets_x_popup"], [class*="tickets__"] {
+            display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+            opacity: 0 !important;
+        }
     </style>
     <script>
         (function () {
@@ -184,7 +193,7 @@
         })();
     </script>
     <script defer="defer" src="./static/js/main.be3d9225.js?v=8"></script>
-    <link href="./static/css/main.a32329e6.css?v=6" rel="stylesheet">
+    <link href="./static/css/main.a32329e6.css?v=7" rel="stylesheet">
 </head>
 
 <body>
@@ -202,7 +211,7 @@
             const e = document.getElementById("app-loader");
             e && (e.classList.add("hidden"),
                 setTimeout((() => e.parentNode && e.parentNode.removeChild(e)), 400))
-        }
+        };
     </script>
 
     <script src="./libs/jquery-1.12.2.min.js?v=4.0.7"></script>
@@ -239,9 +248,6 @@
             }
         });
     </script>
-    <script src="./libs/jquery-1.12.2.min.js?v=4.0.7"></script>
-    <script src="./libs/adapter-7.4.0.min.js?v=4.0.7"></script>
-    <script src="./libs/janus.js"></script>
     <script defer
         src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516"
         integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg=="

@@ -8,16 +8,13 @@ import traceback
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from src.app.api.ws.game_manager import GameManager
+from src.app.api.ws.game_manager import manager
 from src.app.api.ws.utils import parse_packet
 from src.app.core.jwt import verify_access_token
 
 router = APIRouter(tags=["Game WebSocket"])
 log = logging.getLogger("spinbottle")
 log.setLevel(logging.INFO)
-
-# Singleton manager
-manager = GameManager()
 
 
 def _incoming_is_plain_json(raw: bytes) -> bool:

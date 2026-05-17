@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.app.core.config import load_config
-from src.app.database.models import User, Wallet, Admins
+from src.app.database.models import User, Wallet, Admins, UserAchievement
 
 config = load_config()
 
@@ -88,21 +88,43 @@ class UserRepository:
 
     async def get_user_by_id(self, user_id: int):
         """ID (primary key) orqali foydalanuvchini topish"""
-        stmt = select(User).where(User.id == user_id).options(selectinload(User.wallet))
+        stmt = select(User).where(User.id == user_id).options(
+            selectinload(User.wallet),
+            selectinload(User.achievements).selectinload(UserAchievement.achievement),
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_user_by_username(self, username: str):
-        """Username orqali foydalanuvchini topish"""
-        stmt = select(User).where(User.username == username).options(selectinload(User.wallet))
+        """Username orqali foydalanuvchini topish (@ prefiksini qo'llab-quvvatlaydi)."""
+        if username.startswith("@"):
+            username = username[1:]
+        stmt = select(User).where(User.username == username).options(
+            selectinload(User.wallet),
+            selectinload(User.achievements).selectinload(UserAchievement.achievement),
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_user_by_login(self, login: str):
         """Login orqali foydalanuvchini topish"""
-        stmt = select(User).where(User.login == login).options(selectinload(User.wallet))
+        stmt = select(User).where(User.login == login).options(
+            selectinload(User.wallet),
+            selectinload(User.achievements).selectinload(UserAchievement.achievement),
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_user_by_login_or_id(self, identifier: str):
+        """Login yoki raqamli ID (users.id) bo'yicha foydalanuvchi."""
+        raw = (identifier or "").strip()
+        if not raw:
+            return None
+        if raw.isdigit():
+            user = await self.get_user_by_id(int(raw))
+            if user:
+                return user
+        return await self.get_user_by_login(raw)
 
     async def add_user(
         self,
@@ -113,7 +135,44 @@ class UserRepository:
         **kwargs,
     ):
         """Umumiy foydalanuvchi qo'shish metodi (TG yoki Web)"""
-        # Yangi referral_id yaratish
+        from sqlalchemy.exc import IntegrityError
+
+        from src.app.database.sequence_sync import (
+            is_primary_key_violation,
+            sync_all_sequences,
+        )
+
+        last_err: Exception | None = None
+        for attempt in range(2):
+            try:
+                return await self._add_user_once(
+                    password=password,
+                    tg_id=tg_id,
+                    referred_by_id=referred_by_id,
+                    country=country,
+                    **kwargs,
+                )
+            except IntegrityError as e:
+                last_err = e
+                await self.session.rollback()
+                if attempt == 0 and is_primary_key_violation(e):
+                    await sync_all_sequences(self.session)
+                    await self.session.commit()
+                    continue
+                raise
+        if last_err:
+            raise last_err
+        raise RuntimeError("add_user failed")
+
+    async def _add_user_once(
+        self,
+        *,
+        password: str = None,
+        tg_id: int = None,
+        referred_by_id: str = None,
+        country: str = None,
+        **kwargs,
+    ):
         new_ref_id = await self._generate_referral_id()
 
         user = User(
@@ -125,51 +184,28 @@ class UserRepository:
             **kwargs,
         )
         self.session.add(user)
-        await self.session.flush()  # User.id ni olish uchun
+        await self.session.flush()
 
-        # 👤 Avtomatik username generatsiya qilish
         if not user.username:
             user.username = f"user_{user.id}"
             await self.session.flush()
 
+        from src.app.database.repositories.game import GameRepository
 
-        # 💰 Hamyon yaratish
-        wallet = Wallet(user_id=user.id)
-        self.session.add(wallet)
+        game = GameRepository(self.session)
+        await game.ensure_wallet(user.id)
 
         if referred_by_id is not None:
             await self.increment_invited_guests_by_ref_id(referred_by_id)
 
-        try:
-            await self.session.commit()
-            await self.session.refresh(user, ["wallet"])  # Relationshipni yuklash
-            return user
-        except Exception:
-            await self.session.rollback()
-            raise
-
-    async def get_user_by_login(self, login: str):
-        """Login orqali foydalanuvchini topish"""
-        stmt = (
-            select(User).where(User.login == login).options(selectinload(User.wallet))
-        )
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        await self.session.commit()
+        await self.session.refresh(user, ["wallet"])
+        return user
 
     async def get_user(self, tg_id: int):
-        stmt = (
-            select(User).where(User.tg_id == tg_id).options(selectinload(User.wallet))
-        )
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
-
-    async def get_user_by_username(self, username: str):
-        if username.startswith("@"):
-            username = username[1:]
-        stmt = (
-            select(User)
-            .where(User.username == username)
-            .options(selectinload(User.wallet))
+        stmt = select(User).where(User.tg_id == tg_id).options(
+            selectinload(User.wallet),
+            selectinload(User.achievements).selectinload(UserAchievement.achievement),
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -180,14 +216,26 @@ class UserRepository:
         return result.scalars().all()
 
     async def increment_invited_guests_by_ref_id(self, referral_id: str):
-        """Taklif qilgan odamning invited_guests'ini 1 taga oshirish"""
+        """Taklif qilgan odamning invited_guests'ini 1 taga oshirish (partner yoki oddiy)."""
+        from src.app.database.models.partner import Partner
+
+        referral_id = (referral_id or "").strip()
+        if not referral_id:
+            return
+        p_stmt = select(Partner).where(
+            Partner.partner_id == referral_id, Partner.is_active.is_(True)
+        )
+        partner = (await self.session.execute(p_stmt)).scalar_one_or_none()
+        if partner:
+            partner.invited_guests = int(partner.invited_guests or 0) + 1
+            await self.session.flush()
+            return
         stmt = (
             update(User)
             .where(User.referral_id == referral_id)
             .values(invited_guests=User.invited_guests + 1)
         )
         await self.session.execute(stmt)
-        # Commit add_tg_user/add_web_user ichida qilinadi
 
     async def get_registration_stats(self):
         from datetime import datetime, timedelta

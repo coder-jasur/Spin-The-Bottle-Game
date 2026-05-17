@@ -27,6 +27,8 @@ from src.app.api.ws.constants import (
     GIFT_TYPES_FREE,
     GIFT_TYPES_VIP,
     KICKOUT_STREAK_RESET_SECONDS,
+    league_state_for_total_kisses,
+    league_tier_from_total_kisses,
     kickout_price_for_use_index,
     kickout_streak_effective_uses,
 )
@@ -34,6 +36,12 @@ from src.app.api.ws.constants import (
 if TYPE_CHECKING:
     from src.app.database.models.user   import User
     from src.app.database.models.wallet import Wallet
+
+
+def achievement_level_to_client(level: int) -> int:
+    """Ichki/DB 1-based daraja → klient 0-based (assets.json image[] indeksi)."""
+    n = int(level or 0)
+    return max(0, n - 1) if n > 0 else 0
 
 
 def parse_birth_date_ms(raw: object) -> int:
@@ -94,12 +102,16 @@ class Player:
         self.seat         = seat
         self.table_id: Optional[str] = None
         self.session_token: Optional[str] = None
+        # plain_ws: server `handle` da yangilanadi; 10 daqiqa harakatsizlik tekshiruvi
+        self.last_activity_ms: int = 0
 
         # ── Moliya (DB dan yuklanadi) ──────────────────────────────────
         self.hearts       = 0   # game ichida "gold" sifatida ishlatiladi
         self.stars        = 0   # tokenlar
         self.hearts_real  = 0
         self.gift_tokens  = 0
+        self.stars_coin   = 0
+        self.tg_id: Optional[int] = None
         self.daily_streak = 0
         self.can_claim_bonus = False
 
@@ -117,9 +129,11 @@ class Player:
         # ── Profil ────────────────────────────────────────────────────
         self.vip          = False
         self.verified     = True
-        self.country      = "UZBEKISTAN"
-        self.locale       = "en_UZ"
-        self.language     = "ru"
+        self.country      = "UZ"
+        from src.app.core.language import DEFAULT_LANG, to_game_locale
+
+        self.locale       = to_game_locale(DEFAULT_LANG)
+        self.language     = DEFAULT_LANG
         self.age          = 0
         self.level        = 1
         self.xp           = 0
@@ -150,6 +164,8 @@ class Player:
         # Butilka aylanishlari (sessiyadan tashqari saqlanadi — UserStats `bottle_spin`)
         self.total_spins: int = 0
         self.friends_privacy: str = "everyone"
+        # Referral: kimlar ro'yxatdan `referred_by_id` bilan o'tgani (users.invited_guests)
+        self.invited_guests: int = 0
         # Brauzer klienti har xabarda ketma-ket `packet` kutadi (Session.trackedRecv).
         self.out_packet_seq: Optional[int] = None
 
@@ -219,42 +235,85 @@ class Player:
             self.items[k] = max(int(self.items.get(k, 0) or 0), 99)
         self.hearts = max(int(self.hearts or 0), ADMIN_DISPLAY_HEARTS)
         self.hearts_real = self.hearts
-        self.stars = max(int(self.stars or 0), ADMIN_DISPLAY_STARS)
         self.gift_tokens = max(int(getattr(self, "gift_tokens", 0) or 0), ADMIN_DISPLAY_STARS)
+        self.stars_coin = max(int(getattr(self, "stars_coin", 0) or 0), ADMIN_DISPLAY_STARS)
+        self.sync_token_display()
+
+    def spendable_tokens(self) -> int:
+        """Sarflash uchun faqat stars_coin (gift_tokens alohida, yechilmaydi)."""
+        return int(getattr(self, "stars_coin", 0) or 0)
+
+    def sync_token_display(self) -> None:
+        """Klient `tokens` — faqat stars_coin."""
+        self.stars = self.spendable_tokens()
+
+    def apply_wallet_balances(
+        self, *, hearts: int, stars_coin: int, gift_tokens: int
+    ) -> None:
+        self.hearts = int(hearts or 0)
+        self.hearts_real = self.hearts
+        self.stars_coin = int(stars_coin or 0)
+        self.gift_tokens = int(gift_tokens or 0)
+        self.sync_token_display()
 
     def wallet_for_client(self) -> Dict[str, Any]:
         """Klient JSON: gold/tokens int."""
+        gt = int(getattr(self, "gift_tokens", 0) or 0)
+        sc = int(getattr(self, "stars_coin", 0) or 0)
         return {
             "gold": int(self.hearts or 0),
             "goldReal": int(self.hearts_real or 0),
-            "tokens": int(self.stars or 0),
-            "gift_tokens": int(getattr(self, "gift_tokens", 0) or 0),
+            "tokens": sc,
+            "gift_tokens": gt,
+            "stars_coin": sc,
         }
 
     # ════════════════════════════════════════════════════════════════════════
     # Factory
     # ════════════════════════════════════════════════════════════════════════
+    @staticmethod
+    def _table_display_name(db_user: "User") -> str:
+        from src.app.api.auth.user_payload import game_display_name
+
+        return game_display_name(db_user)
+
     @classmethod
     def from_db(cls, ws, db_user: "User", seat: int = 0) -> "Player":
         """DB User modeli asosida Player yaratadi."""
+        from src.app.services.telegram_profile import NO_IMG, public_avatar_url
+
         wallet: "Wallet | None" = getattr(db_user, "wallet", None)
 
         p = cls(
             ws=ws,
             user_id=str(db_user.id),
-            username=db_user.display_name or db_user.username or f"user_{db_user.id}",
-            photo_url=db_user.avatar_url or "/photos/no_img.png",
+            username=cls._table_display_name(db_user),
+            photo_url=public_avatar_url(db_user.avatar_url) or NO_IMG,
             male=(db_user.gender != "female"),
             seat=seat,
         )
         p.db_id    = db_user.id
+        p.tg_id    = getattr(db_user, "tg_id", None)
+        from src.app.api.auth.user_payload import telegram_username_label
+
+        p._db_login = db_user.login
+        from src.app.api.auth.user_payload import _stored_telegram_handle
+
+        p._db_username = _stored_telegram_handle(db_user) or db_user.username
+        p._settings_username = f"user_{db_user.id}"
+        p._game_login_name = telegram_username_label(db_user)
         p.level    = db_user.level   or 1
         p.xp       = db_user.xp      or 0
         p.age      = db_user.age     or 0
-        p.country  = db_user.country or "UZBEKISTAN"
-        p.locale   = db_user.language_code or "en_UZ"
-        p.language = db_user.language_code or "ru"
+        p.country  = db_user.country or "UZ"
+        from src.app.core.language import normalize_lang, to_game_locale
+
+        p.language = normalize_lang(db_user.language_code)
+        p.locale = to_game_locale(p.language)
         p.gender   = db_user.gender  or "male"
+        from src.app.api.ws.profile_setup import user_needs_profile_setup
+
+        p.is_new = 1 if user_needs_profile_setup(db_user) else 0
         p.status   = db_user.status_text or ""
         _exp = getattr(db_user, "vip_expires_at", None)
         _vip_flag = (db_user.vip_status is True) or (
@@ -279,9 +338,12 @@ class Player:
 
         if wallet:
             p.hearts      = wallet.hearts or 0
-            p.stars       = wallet.stars  or 0
             p.hearts_real = wallet.hearts or 0
-            p.gift_tokens = getattr(wallet, "gift_tokens", 0) or 0
+            p.apply_wallet_balances(
+                hearts=int(wallet.hearts or 0),
+                stars_coin=int(getattr(wallet, "stars_coin", 0) or 0),
+                gift_tokens=int(getattr(wallet, "gift_tokens", 0) or 0),
+            )
 
         p.daily_streak = db_user.daily_streak or 0
         # can_claim_bonus ni aniqlash
@@ -299,6 +361,7 @@ class Player:
         p.harem_owner_id = getattr(db_user, "harem_owner_id", 0) or 0
         p.harem_price    = getattr(db_user, "harem_price", 1) or 1
         p.friends_privacy = getattr(db_user, "friends_privacy", None) or "everyone"
+        p.invited_guests = int(getattr(db_user, "invited_guests", 0) or 0)
         p.kickout_streak_count = int(getattr(db_user, "kickout_streak_count", 0) or 0)
         p.kickout_last_at = getattr(db_user, "kickout_last_at", None)
 
@@ -331,6 +394,7 @@ class Player:
         sid = str(self.id)
         return {
             "id":          sid,
+            "uid":         sid,
             "userId":      sid,
             "name":        self.username,
             "username":    self.username,
@@ -347,6 +411,9 @@ class Player:
             "gender":      self.gender,
             "seat":        self.seat,
             "premium":     self.vip,
+            "kisses":      self.kisses,
+            "total_kisses": self.total_kisses,
+            "level":       self.level,
             "harem_owner_id": self.harem_owner_id,
             "harem_price":    self.harem_price,
             "harem_owner":    None, # Manager tomonidan to'ldiriladi
@@ -358,6 +425,7 @@ class Player:
         wf = self.wallet_for_client()
         part = {
             "id":          sid,
+            "uid":         sid,
             "userId":      sid,
             "name":        self.username,
             "username":    self.username,
@@ -378,6 +446,8 @@ class Player:
             "frame":       self.frame,
             "stone":       self.stone,
             "drink":       self.drink,
+            "drink_count": int(self.drink_count or 0),
+            "drink_random": int(self.drink_random or 0),
             "hat":         self.hat,
             "ava_gift":    self.ava_gift,
             "bottle_pass": False,
@@ -395,11 +465,15 @@ class Player:
             "rank":        1,
             "score":       self.total_kisses,
             "total_kisses":self.total_kisses,
+            # Ba'zi UI qismlarida unlock shartlari `*_count` nomlari bilan ishlaydi
+            "total_kiss_count": self.total_kisses,
+            "total_music_count": self.dj_score,
+            "total_smile_count": int(getattr(self, "compliments_lifetime", 0) or 0),
             "dj_score":    self.dj_score,
             "gestures":    self.emotion,
             "price":       self.expense,
             "harem_price": self.harem_price,
-            "league":      min(max(int(self.total_kisses or 0) // 400, 0), 15),
+            "league":      league_tier_from_total_kisses(self.total_kisses),
             "harem_owner_id": self.harem_owner_id,
             "harem_owner": None, # Manager tomonidan to'ldiriladi
             "gender":      self.gender,
@@ -427,13 +501,20 @@ class Player:
         fv = "all" if self.friends_privacy == "everyone" else self.friends_privacy
         sid = str(self.id)
         wf = self.wallet_for_client()
+        game_login = getattr(self, "_settings_username", None) or (
+            f"user_{self.db_id}" if self.db_id else self.username
+        )
+        tg_label = str(getattr(self, "_game_login_name", None) or "").lstrip("@")
         pl = {
             "type":               "login",
             "ok":                 True,
             "id":                 sid,
             "userId":             sid,
             "name":               self.username,
-            "username":           self.username,
+            "username":           tg_label or game_login,
+            "game_username":      game_login,
+            "login":              game_login,
+            "telegram_username": getattr(self, "_db_username", None) or "",
             "male":               self.male,
             "photo_url":          self.photo_url,
             "image":              self.photo_url,
@@ -472,8 +553,13 @@ class Player:
             "rank":               1,
             "score":              self.total_kisses,
             "total_kisses":       self.total_kisses,
-            "gestures":           0,
-            "price":              0,
+            # Unlock/shop uchun mos nomlar (web bundle eski joylarda shuni o'qiydi)
+            "total_kiss_count":   self.total_kisses,
+            "total_music_count":  self.dj_score,
+            "total_smile_count":  int(getattr(self, "compliments_lifetime", 0) or 0),
+            # Klient unlock / «Most emotional» va xarajat reytingi — DB users.emotion / expense
+            "gestures":           int(getattr(self, "emotion", 0) or 0),
+            "price":              int(getattr(self, "expense", 0) or 0),
             "gender":             self.gender,
             "gift_tokens":        wf["gift_tokens"],
             "daily_login_streak": self.daily_streak,
@@ -504,15 +590,25 @@ class Player:
             # Qf / _recv_login kutilgan snake_case va ixtiyoriy maydonlar
             "created_at":         self.joined_at or ts,
             "prev_login":         0,
-            "referrals":          0,
+            "referrals":          int(getattr(self, "invited_guests", 0) or 0),
             "achievements":       [
-                {"achievement_id": k, "level": v, "timestamp": ts}
+                {
+                    "achievement_id": k,
+                    "level": achievement_level_to_client(v),
+                    "timestamp": ts,
+                }
                 for k, v in (self.achievements or {}).items()
             ],
             "is_admin":           getattr(self, "is_admin", False),
             # Legacy klient: abTest.kickout false bo'lsa profilda kick/save UI umuman chiqmaydi
             "abtest":             {"kickout": True},
             "ip_country":         "UZ",
+            "ipCountry":          "UZ",
+            "viewer": {
+                "viewer": {
+                    "ipCountry":  "UZ"
+                }
+            },
             "compliments_available": 0,
             "clients":            [],
             "purchase_bonus_upto": 0,
@@ -530,8 +626,8 @@ class Player:
                 "refresh_ms": 60_000,
             },
             "rewarded_video_ms":  0,
-            "league_state":       "",
-            "league":             0,
+            "league_state":       league_state_for_total_kisses(self.total_kisses),
+            "league":             league_tier_from_total_kisses(self.total_kisses),
             "max_league":         16,
             "profile_update_ms":  0,
         }

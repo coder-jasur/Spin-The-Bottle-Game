@@ -101,25 +101,28 @@ async def load_assets(
         if int(w.stars_coin or 0) < floor:
             w.stars_coin = floor
             dirty = True
-        if int(w.stars or 0) < floor:
-            w.stars = floor
+        if int(w.gift_tokens or 0) < floor:
+            w.gift_tokens = floor
             dirty = True
         if dirty:
             await session.commit()
 
-    balance_stars = int(w.stars or 0) if w else 0
+    gift_t = int(w.gift_tokens or 0) if w else 0
     gm_coin_val = int(w.stars_coin or 0) if w else 0
+    balance_tokens = gm_coin_val
     if is_admin:
-        balance_stars = max(balance_stars, ADMIN_DISPLAY_STARS)
+        gift_t = max(gift_t, ADMIN_DISPLAY_STARS)
         gm_coin_val = max(gm_coin_val, ADMIN_DISPLAY_STARS)
+        balance_tokens = gm_coin_val
 
     payload = {
         "success": True,
         "message": "Məlumat yükləndi",
         "ban": 1 if user.is_banned else 0,
-        "balance": balance_stars,
-        "balance_live": w.balance_live if w else 0,
+        "balance": balance_tokens,
+        "gift_tokens": gift_t,
         "gm_coin": gm_coin_val,
+        "tokens": balance_tokens,
         "site": None,
         "chat_id": user.chat_id or None,
         "password_base64": None,
@@ -573,18 +576,20 @@ async def referrals(request: Request, session: AsyncSession = Depends(get_db)):
             print(">>> REFERRALS DEBUG: Token JWT emas va legacy formatda ham emas", flush=True)
 
     count = 0
+    referral_id = None
     if payload and payload.get("id"):
         user_repo = UserRepository(session)
         user = await user_repo.get_user_by_id(payload.get("id"))
         if user:
             count = user.invited_guests
-            print(f">>> REFERRALS DEBUG: Found user {user.id}, invited_guests: {count}", flush=True)
+            referral_id = user.referral_id
+            print(f">>> REFERRALS DEBUG: Found user {user.id}, invited_guests: {count}, referral_id: {referral_id}", flush=True)
         else:
             print(f">>> REFERRALS DEBUG: User ID {payload.get('id')} database dan topilmadi", flush=True)
     else:
         print(">>> REFERRALS DEBUG: User ID aniqlanmadi (token xato yoki yo'q)", flush=True)
 
-    return {"success": True, "count": count, "referrals": []}
+    return {"success": True, "count": count, "referrals": [], "referral_id": referral_id}
 
 
 @router.post("/api/frames/increment-status-view")
@@ -902,7 +907,7 @@ async def convert_jeton(
     request: Request,
     session: AsyncSession = Depends(get_db),
 ):
-    """GM (stars_coin) → jeton (balance_live). Klient `success` + `data` kutadi."""
+    """GM (stars_coin) → gift_tokens. Klient `success` + `data` kutadi."""
     from src.app.database.repositories.game import GameRepository
     from src.app.api.ws.constants import HEARTS_PACKAGES
 
@@ -924,7 +929,7 @@ async def convert_jeton(
 
     repo = GameRepository(session)
     await repo.ensure_wallet(user_id)
-    ok, new_sc, new_live = await repo.convert_stars_coin_to_live(
+    ok, new_sc, new_gt = await repo.convert_stars_coin_to_gift_tokens(
         user_id, amount, jeton_delta
     )
     if not ok:
@@ -932,7 +937,7 @@ async def convert_jeton(
             status_code=400,
             content={
                 "success": False,
-                "error": f"Yetarli GM. Sizda: {new_sc}",
+                "error": f"Yetarli Stars. Sizda: {new_sc}",
                 "data": {},
             },
         )
@@ -941,7 +946,7 @@ async def convert_jeton(
         "success": True,
         "data": {
             "STARS_coin": new_sc,
-            "balance_live": new_live,
+            "gift_tokens": new_gt,
             "converted_from": amount,
             "converted_to": jeton_delta,
         },
@@ -954,7 +959,7 @@ async def frames_convert_stars_to_hearts(
     request: Request,
     session: AsyncSession = Depends(get_db),
 ):
-    """Asosiy STARS → yurak. Klient `success` + `data` (STARS_coin, balance, …)."""
+    """Gift token → yurak. Klient `success` + `data` (STARS_coin, balance, …)."""
     from src.app.database.repositories.game import GameRepository
     from src.app.api.ws.constants import HEARTS_PACKAGES
 
@@ -976,7 +981,7 @@ async def frames_convert_stars_to_hearts(
 
     repo = GameRepository(session)
     await repo.ensure_wallet(user_id)
-    ok, new_stars, _ = await repo.purchase_hearts_with_stars(
+    ok, new_sc, new_gt, _ = await repo.purchase_hearts_with_gift_tokens(
         user_id, amount, hearts_delta
     )
     if not ok:
@@ -984,19 +989,21 @@ async def frames_convert_stars_to_hearts(
             status_code=400,
             content={
                 "success": False,
-                "error": f"Yetarli STARS yo'q. Sizda: {new_stars}",
+                "error": f"Yetarli Stars yo'q. Sizda: {int(new_sc or 0)}",
                 "data": {},
             },
         )
 
     w = await repo.get_wallet(user_id)
     gm = int(w.stars_coin or 0) if w else 0
+    gt = int(w.gift_tokens or 0) if w else 0
 
     return {
         "success": True,
         "data": {
             "STARS_coin": gm,
-            "balance": new_stars,
+            "balance": gt,
+            "tokens": gm,
             "converted_from": amount,
             "converted_to": hearts_delta,
         },
@@ -1043,7 +1050,7 @@ async def frames_purchase_vip(
     await repo.ensure_wallet(auth_uid)
 
     try:
-        ok, new_stars = await repo.purchase_vip_with_stars(
+        ok, new_sc, new_gt = await repo.purchase_vip_with_gift_tokens(
             auth_uid,
             price,
             VIP_BONUS_STARS,
@@ -1059,7 +1066,7 @@ async def frames_purchase_vip(
     if not ok:
         return JSONResponse(
             status_code=400,
-            content={"error": f"VIP uchun {price} STARS kerak."},
+            content={"error": f"VIP uchun {price} token kerak."},
         )
 
     user_repo = UserRepository(session)
@@ -1069,7 +1076,9 @@ async def frames_purchase_vip(
 
     return {
         "expiry_vip": exp_s,
-        "newBalance": new_stars,
+        "newBalance": int(new_sc or 0),
+        "stars_coin": int(new_sc or 0),
+        "gift_tokens": int(new_gt or 0),
     }
 
 
@@ -1123,7 +1132,7 @@ async def frames_purchase_moderator(request: Request):
 
 
 # ── Musiqa: klient `/frames/search-music`, `/frames/all-gallery`, … chaqiradi;
-# ma’lumot `music` router orqali sozlangan upstream / mahalliy JSON dan keladi. ──
+# upstream: MUSIC_API_BASE (default bottle host) / api_music/*; mahalliy JSON faqat MUSIC_USE_LOCAL_JSON=1. ──
 
 _SITE_DATA = Path(__file__).resolve().parents[2] / "site" / "data"
 _USER_GALLERY_JSON = _SITE_DATA / "user_music_gallery.json"

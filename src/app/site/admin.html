@@ -401,6 +401,57 @@
             margin-bottom: 12px;
             line-height: 1.45;
         }
+
+        .live-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            box-shadow: 0 0 8px var(--success);
+            margin-right: 6px;
+            vertical-align: middle;
+            animation: pulse 1.5s ease infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.45; }
+        }
+
+        .payments-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .payments-table th,
+        .payments-table td {
+            padding: 10px 8px;
+            text-align: left;
+            border-bottom: 0.5px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .payments-table th {
+            font-size: 11px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .payments-table tr:hover td {
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .badge-stars {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 6px;
+            background: rgba(242, 179, 123, 0.25);
+            color: var(--warm-a);
+            font-weight: 700;
+            font-size: 12px;
+        }
     </style>
 </head>
 
@@ -411,18 +462,20 @@
             <img class="brand" src="/favicon-96x96.png" width="40" height="40" alt="" />
             <div class="logo-titles">
                 <span class="logo-title">Spin The Bottle</span>
-                <span class="logo-sub">Admin panel</span>
+                <span class="logo-sub" data-i18n="admin.logo_sub">Admin panel</span>
             </div>
         </div>
-        <a href="/welcome" class="back-link">← O‘yin</a>
+        <a href="/welcome" class="back-link" data-i18n="admin.back_game">← O‘yin</a>
     </nav>
 
     <div class="tabs">
-        <button class="tab-btn active" onclick="showTab('dashboard')">📊 Asosiy</button>
-        <button class="tab-btn" onclick="showTab('stats')">📈 Statistika</button>
-        <button class="tab-btn" onclick="showTab('reports')">👥 Foydalanuvchilar</button>
-        <button class="tab-btn" id="admins-tab-btn" onclick="showTab('admins')" style="display: none;">🛡️
-            Adminlar</button>
+        <button class="tab-btn active" data-tab="dashboard" onclick="showTab('dashboard')" data-i18n="admin.tab_dashboard">📊 Asosiy</button>
+        <button class="tab-btn" data-tab="live" onclick="showTab('live')" data-i18n="admin.tab_live">🟢 Onlayn</button>
+        <button class="tab-btn" data-tab="stars" onclick="showTab('stars')" data-i18n="admin.tab_stars">⭐ Stars</button>
+        <button class="tab-btn" data-tab="stats" onclick="showTab('stats')" data-i18n="admin.tab_stats">📈 Statistika</button>
+        <button class="tab-btn" data-tab="reports" onclick="showTab('reports')" data-i18n="admin.tab_reports">👥 Foydalanuvchilar</button>
+        <button class="tab-btn" data-tab="referral" onclick="showTab('referral')" data-i18n="admin.tab_referral">🤝 Referal</button>
+        <button class="tab-btn" id="admins-tab-btn" data-tab="admins" onclick="showTab('admins')" style="display: none;" data-i18n="admin.tab_admins">🛡️ Adminlar</button>
     </div>
 
     <div class="container">
@@ -430,62 +483,126 @@
         <div id="dashboard" class="tab-content active">
             <!-- Balance Form -->
             <div class="card">
-                <h2>Balans qo‘shish</h2>
+                <h2 data-i18n="admin.balance_title">Berish (qo‘shish / ayirish)</h2>
                 <div id="balance-alert" class="alert"></div>
-                <p class="hint">O‘yinda: <strong>yurak</strong> = gold, <strong>yulduz</strong> = token/coin. Bu yerda yozilgan qiymatlar shu ustunlarga qo‘shiladi.</p>
+                <p class="hint" id="balance-hint" data-i18n-html="admin.balance_hint">O‘yinda: <strong>yurak</strong> = gold, <strong>yulduz</strong> = token/coin. Ayirishda balans <strong>0 dan past tushmaydi</strong>. VIP — pastdagi alohida bo‘limda.</p>
                 <div class="form-group">
-                    <label>Foydalanuvchi ID</label>
-                    <input type="number" id="balance-user-id" min="1" step="1" placeholder="Masalan: 42">
+                    <label data-i18n="admin.label_user_id">Foydalanuvchi ID</label>
+                    <input type="number" id="balance-user-id" min="1" step="1" data-i18n-placeholder="admin.placeholder_user_id" placeholder="Masalan: 42">
                 </div>
                 <div class="form-group">
-                    <label>Miqdor</label>
+                    <label data-i18n="admin.label_action">Amal</label>
+                    <select id="balance-operation">
+                        <option value="add" selected data-i18n="admin.op_add">Balansga qo‘shish</option>
+                        <option value="subtract" data-i18n="admin.op_subtract">Balansdan ayirish</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label id="balance-amount-label" data-i18n="admin.label_amount">Miqdor</label>
                     <input type="number" id="balance-amount" min="1" step="1" value="1000">
                 </div>
                 <div class="form-group">
-                    <label>Valyuta</label>
+                    <label data-i18n="admin.label_currency">Valyuta</label>
                     <select id="balance-currency">
-                        <option value="stars">Yulduz (token / coin)</option>
-                        <option value="hearts">Yurak (gold)</option>
+                        <option value="gift_tokens" selected data-i18n="admin.currency_gift">Gift token (sovg‘a UI)</option>
+                        <option value="stars_coin" data-i18n="admin.currency_stars">Stars (Telegram Stars balansi)</option>
+                        <option value="hearts" data-i18n="admin.currency_hearts">Yurak (gold)</option>
                     </select>
                 </div>
-                <button class="btn btn-primary" style="width: 100%;" onclick="addBalance()">Balansga qo‘shish</button>
+                <button class="btn btn-primary" style="width: 100%;" onclick="addBalance()" data-i18n="admin.btn_execute">Bajarish</button>
+            </div>
+
+            <!-- VIP obuna (berish / olish) -->
+            <div class="card" id="vip-grant-card">
+                <h2 data-i18n="admin.vip_title">VIP obuna berish</h2>
+                <div id="vip-alert" class="alert"></div>
+                <p class="hint" data-i18n="admin.vip_hint">VIP muddati tugamagan bo‘lsa — ustiga qo‘shiladi; tugagan bo‘lsa — bugundan boshlab beriladi. Ayirishda kun kamayadi; muddat tugasa VIP o‘chadi.</p>
+                <div class="form-group">
+                    <label data-i18n="admin.label_user_id">Foydalanuvchi ID</label>
+                    <input type="number" id="vip-user-id" min="1" step="1" data-i18n-placeholder="admin.placeholder_user_id" placeholder="Masalan: 42">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="admin.label_action">Amal</label>
+                    <select id="vip-operation">
+                        <option value="add" selected data-i18n="admin.vip_op_add">VIP berish / uzaytirish</option>
+                        <option value="subtract" data-i18n="admin.vip_op_subtract">VIP olib tashlash (kun kamaytirish)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label data-i18n="admin.label_days">Kun (VIP)</label>
+                    <input type="number" id="vip-days" min="1" step="1" value="30">
+                </div>
+                <button class="btn btn-accent" style="width: 100%;" onclick="grantVip()" data-i18n="admin.btn_execute">Bajarish</button>
             </div>
 
             <!-- Broadcast Form -->
             <div class="card">
-                <h2>📢 Ommaviy xabar</h2>
+                <h2 data-i18n="admin.broadcast_title">📢 Ommaviy xabar</h2>
                 <div id="broadcast-alert" class="alert"></div>
                 <div class="form-group">
-                    <label>Xabar matni</label>
-                    <textarea id="broadcast-text" rows="4"
+                    <label data-i18n="admin.label_broadcast">Xabar matni</label>
+                    <textarea id="broadcast-text" rows="4" data-i18n-placeholder="admin.broadcast_placeholder"
                         placeholder="Hamma foydalanuvchilarga yuboriladigan matn..."></textarea>
                 </div>
-                <button class="btn btn-accent" style="width: 100%;" onclick="sendBroadcast()">Xabarni tarqatish</button>
+                <button class="btn btn-accent" style="width: 100%;" onclick="sendBroadcast()" data-i18n="admin.btn_broadcast">Xabarni tarqatish</button>
+            </div>
+        </div>
+
+        <!-- TAB: LIVE -->
+        <div id="live" class="tab-content">
+            <div class="card">
+                <h2><span class="live-dot"></span><span data-i18n="admin.live_title">Hozir onlayn</span></h2>
+                <p class="hint" id="live-updated" data-i18n="admin.live_hint">Yuklanmoqda… Har 10 soniyada yangilanadi.</p>
+                <div class="stats-grid" id="live-online-stats"></div>
+            </div>
+        </div>
+
+        <!-- TAB: STARS PAYMENTS -->
+        <div id="stars" class="tab-content">
+            <div class="card">
+                <h2 data-i18n="admin.stars_title">⭐ Telegram Stars</h2>
+                <p class="hint" data-i18n="admin.stars_hint">Daromad va oxirgi to'lovlar (faqat muvaffaqiyatli XTR to'lovlari).</p>
+                <div class="stats-grid" id="stars-summary-stats"></div>
+                <div style="overflow-x: auto; margin-top: 16px;">
+                    <table class="payments-table">
+                        <thead>
+                            <tr>
+                                <th data-i18n="admin.th_time">Vaqt</th>
+                                <th data-i18n="admin.th_id">ID</th>
+                                <th data-i18n="admin.th_user">Foydalanuvchi</th>
+                                <th data-i18n="admin.th_stars">Stars</th>
+                            </tr>
+                        </thead>
+                        <tbody id="stars-payments-body">
+                            <tr><td colspan="4" data-i18n="admin.loading">Yuklanmoqda…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
         <!-- TAB: STATS -->
         <div id="stats" class="tab-content">
             <div class="card">
-                <h2>📈 Foydalanuvchilar o'sishi</h2>
+                <h2 data-i18n="admin.stats_reg_title">📈 Foydalanuvchilar o'sishi</h2>
                 <div class="stats-grid" id="registration-stats">
                     <!-- Dynamic -->
                 </div>
             </div>
 
             <div class="card">
-                <h2>🌍 Top Davlatlar</h2>
+                <h2 data-i18n="admin.stats_countries_title">🌍 Top Davlatlar</h2>
                 <div id="country-stats">
                     <!-- Dynamic -->
                 </div>
             </div>
 
             <div class="card">
-                <h2>💎 VIP Statistika</h2>
+                <h2 data-i18n="admin.stats_vip_title">💎 VIP Statistika</h2>
                 <div class="stats-grid">
                     <div class="stat-card">
                         <div class="stat-value" id="vip-count">0</div>
-                        <div class="stat-label">Faol VIP foydalanuvchilar</div>
+                        <div class="stat-label" data-i18n="admin.stats_vip_active">Faol VIP foydalanuvchilar</div>
                     </div>
                 </div>
             </div>
@@ -494,24 +611,93 @@
         <!-- TAB: USERS (Search & Complaints) -->
         <div id="reports" class="tab-content">
             <div class="card">
-                <h2>🔍 Foydalanuvchi qidirish</h2>
+                <h2 data-i18n="admin.search_title">🔍 Foydalanuvchi qidirish</h2>
                 <div id="search-alert" class="alert"></div>
                 <div style="display: flex; gap: 10px; margin-bottom: 1rem;">
-                    <input type="text" id="search-user-input" placeholder="ID yoki Username kiriting..."
+                    <input type="text" id="search-user-input" data-i18n-placeholder="admin.search_placeholder" placeholder="ID yoki Username kiriting..."
                         style="flex: 1;" onkeypress="if(event.key === 'Enter') searchUser()">
-                    <button class="btn btn-primary" onclick="searchUser()">Qidirish</button>
+                    <button class="btn btn-primary" onclick="searchUser()" data-i18n="admin.btn_search">Qidirish</button>
                 </div>
             </div>
 
             <div class="card" id="search-result-card" style="display: none;">
-                <h2 style="margin-bottom: 1rem;">👤 Natija</h2>
+                <h2 style="margin-bottom: 1rem;" data-i18n="admin.search_result_title">👤 Natija</h2>
                 <div class="user-list" id="search-result-container"></div>
             </div>
 
             <div class="card">
-                <h2 style="margin-bottom: 1rem;">🚨 Eng ko'p shikoyat tushganlar (10+)</h2>
+                <h2 style="margin-bottom: 1rem;" data-i18n="admin.complaints_title">🚨 Eng ko'p shikoyat tushganlar (10+)</h2>
                 <div class="user-list" id="complaints-list-container">
-                    <p>Yuklanmoqda...</p>
+                    <p data-i18n="admin.loading_complaints">Yuklanmoqda...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB: REFERRAL & PARTNERS -->
+        <div id="referral" class="tab-content">
+            <div class="card">
+                <h2 data-i18n="admin.referral_default_title">⚙️ Oddiy foydalanuvchi referali</h2>
+                <p class="hint" data-i18n="admin.referral_default_hint">Har bir taklif uchun hearts va kunlik umumiy limit (0 = cheksiz).</p>
+                <div id="referral-settings-alert" class="alert"></div>
+                <div class="stats-grid" style="grid-template-columns: 1fr 1fr;">
+                    <div class="form-group">
+                        <label data-i18n="admin.label_invite_bonus">Har taklif (hearts)</label>
+                        <input type="number" id="ref-default-bonus" min="0" step="1" value="50">
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="admin.label_daily_limit">Kunlik limit (hearts)</label>
+                        <input type="number" id="ref-default-limit" min="0" step="1" value="10000">
+                    </div>
+                </div>
+                <button class="btn btn-primary" style="width:100%;" onclick="saveReferralSettings()" data-i18n="admin.btn_save_settings">Sozlamalarni saqlash</button>
+            </div>
+
+            <div class="card">
+                <h2 data-i18n="admin.partner_add_title">➕ Hamkor qo'shish</h2>
+                <p class="hint" data-i18n="admin.partner_add_hint">Hamkor alohida referal kodi, bonus va kunlik limit bilan ishlaydi.</p>
+                <div id="partner-add-alert" class="alert"></div>
+                <div class="form-group">
+                    <label data-i18n="admin.label_partner_user">Foydalanuvchi ID yoki username</label>
+                    <input type="text" id="partner-user-query" data-i18n-placeholder="admin.partner_user_placeholder" placeholder="42 yoki @user_42">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="admin.label_partner_code">Referal kodi (bo'sh = user kodi)</label>
+                    <input type="text" id="partner-code-input" placeholder="">
+                </div>
+                <div class="stats-grid" style="grid-template-columns: 1fr 1fr;">
+                    <div class="form-group">
+                        <label data-i18n="admin.label_invite_bonus">Har taklif (hearts)</label>
+                        <input type="number" id="partner-bonus-input" min="0" value="50">
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="admin.label_daily_limit">Kunlik limit</label>
+                        <input type="number" id="partner-limit-input" min="0" value="10000">
+                    </div>
+                </div>
+                <button class="btn btn-primary" style="width:100%;" onclick="addPartner()" data-i18n="admin.btn_add_partner">Hamkor qo'shish</button>
+            </div>
+
+            <div class="card">
+                <h2 data-i18n="admin.partners_list_title">📋 Hamkorlar</h2>
+                <p class="hint" data-i18n="admin.partners_list_hint">Chaqirilganlar, bugungi daromad va limitlar.</p>
+                <div style="overflow-x:auto;">
+                    <table class="payments-table" id="partners-table">
+                        <thead>
+                            <tr>
+                                <th data-i18n="admin.th_code">Kod</th>
+                                <th data-i18n="admin.th_user">Foydalanuvchi</th>
+                                <th data-i18n="admin.th_invite_bonus">Taklif</th>
+                                <th data-i18n="admin.th_daily_limit">Limit/kun</th>
+                                <th data-i18n="admin.th_guests">Mehmonlar</th>
+                                <th data-i18n="admin.th_today">Bugun</th>
+                                <th data-i18n="admin.th_status">Holat</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="partners-table-body">
+                            <tr><td colspan="8" data-i18n="admin.loading">Yuklanmoqda…</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -519,52 +705,315 @@
         <!-- TAB: ADMINS (Superadmin only) -->
         <div id="admins" class="tab-content">
             <div class="card">
-                <h2>➕ Yangi admin qo'shish</h2>
+                <h2 data-i18n="admin.add_admin_title">➕ Yangi admin qo'shish</h2>
                 <div id="admin-manage-alert" class="alert"></div>
                 <div class="form-group">
-                    <label>Foydalanuvchi ID yoki Username</label>
-                    <input type="text" id="admin-user-input" placeholder="ID yoki @username...">
+                    <label data-i18n="admin.label_admin_input">Foydalanuvchi ID yoki Username</label>
+                    <input type="text" id="admin-user-input" data-i18n-placeholder="admin.admin_input_placeholder" placeholder="ID yoki @username...">
                 </div>
                 <div class="form-group">
-                    <label>Roli</label>
+                    <label data-i18n="admin.label_role">Roli</label>
                     <select id="admin-role-input">
-                        <option value="moderator">Moderator (Oddiy admin)</option>
-                        <option value="superadmin">Superadmin (Boshqaruvchi)</option>
+                        <option value="moderator" data-i18n="admin.role_moderator">Moderator (Oddiy admin)</option>
+                        <option value="superadmin" data-i18n="admin.role_superadmin">Superadmin (Boshqaruvchi)</option>
                     </select>
                 </div>
-                <button class="btn btn-primary" style="width: 100%;" onclick="manageAdminAction('add')">Admin qilib
-                    tayinlash</button>
+                <button class="btn btn-primary" style="width: 100%;" onclick="manageAdminAction('add')" data-i18n="admin.btn_assign_admin">Admin qilib tayinlash</button>
             </div>
 
             <div class="card">
-                <h2>🛡️ Joriydagi adminlar</h2>
+                <h2 data-i18n="admin.admins_list_title">🛡️ Joriydagi adminlar</h2>
                 <div class="user-list" id="admin-list-container">
-                    <p>Yuklanmoqda...</p>
+                    <p data-i18n="admin.loading_complaints">Yuklanmoqda...</p>
                 </div>
             </div>
         </div>
     </div>
 
+    <script src="/static/site_i18n.js?v=4"></script>
+    <script src="/static/admin_i18n.js?v=2"></script>
     <script>
-        function showTab(tabId) {
-            // Hide all contents
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            // Remove active from buttons
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        let i18n = null;
+        function t(key, vars) {
+            if (i18n && i18n.t) return i18n.t(key, vars);
+            if (window.SiteI18n && window.SiteI18n.t) return window.SiteI18n.t(key, vars);
+            return key;
+        }
+        function banDurationSelectHtml(userId) {
+            return `<select id="ban-dur-${userId}" style="padding: 2px; font-size: 0.7rem; background: #222; color: white; border: 1px solid #444; border-radius: 4px;">
+                <option value="1">${t('admin.ban_1d')}</option>
+                <option value="7">${t('admin.ban_1w')}</option>
+                <option value="15">${t('admin.ban_15d')}</option>
+                <option value="30">${t('admin.ban_1m')}</option>
+                <option value="forever">${t('admin.ban_forever')}</option>
+            </select>`;
+        }
+        let liveRefreshTimer = null;
 
-            // Show target
+        function showTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => {
+                b.classList.toggle('active', b.getAttribute('data-tab') === tabId);
+            });
             const target = document.getElementById(tabId);
             if (target) target.classList.add('active');
 
-            // Find which button to activate
-            if (tabId === 'dashboard') document.querySelectorAll('.tab-btn')[0].classList.add('active');
-            else if (tabId === 'stats') document.querySelectorAll('.tab-btn')[1].classList.add('active');
-            else if (tabId === 'reports') document.querySelectorAll('.tab-btn')[2].classList.add('active');
-            else if (tabId === 'admins') document.getElementById('admins-tab-btn').classList.add('active');
+            if (liveRefreshTimer) {
+                clearInterval(liveRefreshTimer);
+                liveRefreshTimer = null;
+            }
 
+            if (tabId === 'live') {
+                loadLiveDashboard();
+                liveRefreshTimer = setInterval(loadLiveDashboard, 10000);
+            }
+            if (tabId === 'stars') loadStarsPayments();
             if (tabId === 'stats') loadStats();
             if (tabId === 'reports') loadComplaints();
             if (tabId === 'admins') loadAdmins();
+            if (tabId === 'referral') loadReferralTab();
+        }
+
+        function showReferralAlert(elId, message, ok) {
+            const el = document.getElementById(elId);
+            if (!el) return;
+            el.innerText = message;
+            el.className = ok ? 'alert alert-success' : 'alert alert-error';
+            el.style.display = 'block';
+        }
+
+        async function loadReferralTab() {
+            try {
+                const res = await fetch('/api/admin/referral/settings', { credentials: 'same-origin' });
+                const data = await res.json();
+                if (data.success && data.settings) {
+                    document.getElementById('ref-default-bonus').value = data.settings.bonus_hearts;
+                    document.getElementById('ref-default-limit').value = data.settings.bonus_limit;
+                }
+            } catch (e) { /* ignore */ }
+            await loadPartnersList();
+        }
+
+        async function saveReferralSettings() {
+            const bonus = parseInt(document.getElementById('ref-default-bonus').value, 10);
+            const limit = parseInt(document.getElementById('ref-default-limit').value, 10);
+            if (isNaN(bonus) || isNaN(limit) || bonus < 0 || limit < 0) {
+                showReferralAlert('referral-settings-alert', t('admin.err_amount'), false);
+                return;
+            }
+            try {
+                const res = await fetch('/api/admin/referral/settings', {
+                    method: 'PUT',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bonus_hearts: bonus, bonus_limit: limit }),
+                });
+                const data = await res.json();
+                showReferralAlert('referral-settings-alert', data.message || (data.success ? t('admin.saved_ok') : t('admin.error')), !!data.success);
+            } catch (e) {
+                showReferralAlert('referral-settings-alert', t('admin.network_error'), false);
+            }
+        }
+
+        async function addPartner() {
+            const user_query = document.getElementById('partner-user-query').value.trim();
+            const partner_id = document.getElementById('partner-code-input').value.trim();
+            const invited_bonus = parseInt(document.getElementById('partner-bonus-input').value, 10);
+            const bonus_limit = parseInt(document.getElementById('partner-limit-input').value, 10);
+            if (!user_query) {
+                showReferralAlert('partner-add-alert', t('admin.err_user_id'), false);
+                return;
+            }
+            try {
+                const res = await fetch('/api/admin/referral/partners', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_query,
+                        partner_id: partner_id || undefined,
+                        invited_bonus,
+                        bonus_limit,
+                    }),
+                });
+                const data = await res.json();
+                if (!data.success) {
+                    showReferralAlert('partner-add-alert', data.message || t('admin.error'), false);
+                    return;
+                }
+                showReferralAlert('partner-add-alert', t('admin.saved_ok'), true);
+                document.getElementById('partner-user-query').value = '';
+                document.getElementById('partner-code-input').value = '';
+                await loadPartnersList();
+            } catch (e) {
+                showReferralAlert('partner-add-alert', t('admin.network_error'), false);
+            }
+        }
+
+        async function loadPartnersList() {
+            const body = document.getElementById('partners-table-body');
+            if (!body) return;
+            body.innerHTML = '<tr><td colspan="8">' + t('admin.loading') + '</td></tr>';
+            try {
+                const res = await fetch('/api/admin/referral/partners', { credentials: 'same-origin' });
+                const data = await res.json();
+                if (!data.success) {
+                    body.innerHTML = '<tr><td colspan="8">' + t('admin.load_failed') + '</td></tr>';
+                    return;
+                }
+                const rows = data.partners || [];
+                if (!rows.length) {
+                    body.innerHTML = '<tr><td colspan="8">' + t('admin.no_partners') + '</td></tr>';
+                    return;
+                }
+                body.innerHTML = rows.map(p => {
+                    const status = p.is_active ? t('admin.status_active') : t('admin.status_inactive');
+                    const today = p.bonus_limit > 0 ? `${p.daily_earned}/${p.bonus_limit}` : String(p.daily_earned);
+                    return `<tr>
+                        <td><code>${escapeHtml(p.partner_id)}</code></td>
+                        <td>${escapeHtml(p.display_name)}<br><small>ID ${p.user_id}</small></td>
+                        <td>${p.invited_bonus}</td>
+                        <td>${p.bonus_limit}</td>
+                        <td>${p.invited_guests}</td>
+                        <td>${today}</td>
+                        <td>${status}</td>
+                        <td style="white-space:nowrap;">
+                            <button class="btn btn-accent" style="padding:4px 8px;font-size:0.75rem;" onclick="editPartnerPrompt(${p.id}, ${p.invited_bonus}, ${p.bonus_limit})">${t('admin.btn_edit')}</button>
+                            <button class="btn btn-${p.is_active ? 'danger' : 'success'}" style="padding:4px 8px;font-size:0.75rem;" onclick="togglePartnerActive(${p.id}, ${!p.is_active})">${p.is_active ? t('admin.btn_deactivate') : t('admin.btn_activate')}</button>
+                        </td>
+                    </tr>`;
+                }).join('');
+            } catch (e) {
+                body.innerHTML = '<tr><td colspan="8">' + t('admin.load_failed') + '</td></tr>';
+            }
+        }
+
+        function escapeHtml(s) {
+            return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        async function editPartnerPrompt(id, bonus, limit) {
+            const nb = prompt(t('admin.prompt_invite_bonus'), String(bonus));
+            if (nb === null) return;
+            const nl = prompt(t('admin.prompt_daily_limit'), String(limit));
+            if (nl === null) return;
+            try {
+                const res = await fetch('/api/admin/referral/partners/' + id, {
+                    method: 'PATCH',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        invited_bonus: parseInt(nb, 10),
+                        bonus_limit: parseInt(nl, 10),
+                    }),
+                });
+                const data = await res.json();
+                if (data.success) await loadPartnersList();
+                else alert(data.message || t('admin.error'));
+            } catch (e) {
+                alert(t('admin.network_error'));
+            }
+        }
+
+        async function togglePartnerActive(id, active) {
+            try {
+                const res = await fetch('/api/admin/referral/partners/' + id, {
+                    method: 'PATCH',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ is_active: active }),
+                });
+                const data = await res.json();
+                if (data.success) await loadPartnersList();
+                else alert(data.message || t('admin.error'));
+            } catch (e) {
+                alert(t('admin.network_error'));
+            }
+        }
+
+        function renderRevenueCards(containerId, revenue) {
+            const el = document.getElementById(containerId);
+            if (!el || !revenue) return;
+            const blocks = [
+                { label: t('admin.revenue_today'), key: 'day' },
+                { label: t('admin.revenue_week'), key: 'week' },
+                { label: t('admin.revenue_month'), key: 'month' },
+                { label: t('admin.revenue_total'), key: 'total' },
+            ];
+            el.innerHTML = blocks.map(b => {
+                const r = revenue[b.key] || { stars: 0, payments: 0 };
+                return `
+                    <div class="stat-card">
+                        <div class="stat-value">${Number(r.stars || 0).toLocaleString()} ★</div>
+                        <div class="stat-label">${b.label}</div>
+                        <div class="stat-label" style="margin-top:6px;text-transform:none;">${t('admin.payments_count', { n: r.payments || 0 })}</div>
+                    </div>`;
+            }).join('');
+        }
+
+        async function loadLiveDashboard() {
+            const onlineEl = document.getElementById('live-online-stats');
+            const updatedEl = document.getElementById('live-updated');
+            try {
+                const res = await fetch('/api/admin/live-dashboard', { credentials: 'same-origin' });
+                const data = await res.json();
+                if (!data.success) return;
+                const o = data.online || {};
+                onlineEl.innerHTML = `
+                    <div class="stat-card">
+                        <div class="stat-value">${o.unique_registered ?? 0}</div>
+                        <div class="stat-label">${t('admin.live_registered')}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${o.websocket_connections ?? 0}</div>
+                        <div class="stat-label">${t('admin.live_ws')}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${o.total_in_rooms ?? 0}</div>
+                        <div class="stat-label">${t('admin.live_in_rooms')}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${o.active_tables ?? 0}</div>
+                        <div class="stat-label">${t('admin.live_tables')}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${o.guests ?? 0}</div>
+                        <div class="stat-label">${t('admin.live_guests')}</div>
+                    </div>`;
+                if (updatedEl) {
+                    const ts = data.ts ? new Date(data.ts) : new Date();
+                    updatedEl.textContent = t('admin.live_updated', { time: ts.toLocaleString() });
+                }
+            } catch (e) {
+                if (onlineEl) onlineEl.innerHTML = '<p class="hint">' + t('admin.load_failed') + '</p>';
+            }
+        }
+
+        async function loadStarsPayments() {
+            const body = document.getElementById('stars-payments-body');
+            try {
+                const res = await fetch('/api/admin/stars-payments?limit=50', { credentials: 'same-origin' });
+                const data = await res.json();
+                if (!data.success) {
+                    body.innerHTML = '<tr><td colspan="4">' + t('admin.error') + '</td></tr>';
+                    return;
+                }
+                renderRevenueCards('stars-summary-stats', data.summary);
+                const rows = data.payments || [];
+                if (!rows.length) {
+                    body.innerHTML = '<tr><td colspan="4">' + t('admin.no_stars_payments') + '</td></tr>';
+                    return;
+                }
+                body.innerHTML = rows.map(p => `
+                    <tr>
+                        <td>${p.created_at || '—'}</td>
+                        <td>${p.user_id}</td>
+                        <td>${p.username}</td>
+                        <td><span class="badge-stars">+${p.amount} ★</span></td>
+                    </tr>`).join('');
+            } catch (e) {
+                body.innerHTML = '<tr><td colspan="4">' + t('admin.load_failed') + '</td></tr>';
+            }
         }
 
         // User Search
@@ -578,7 +1027,7 @@
 
             alert.style.display = 'none';
             resultCard.style.display = 'none';
-            container.innerHTML = '<p>Izlanmoqda...</p>';
+            container.innerHTML = '<p>' + t('admin.searching') + '</p>';
             resultCard.style.display = 'block';
 
             try {
@@ -597,32 +1046,28 @@
                             <img src="${u.avatar}" style="width: 50px; height: 50px; border-radius: 10px; object-fit: cover; border: 1px solid rgba(255,255,255,0.1);">
                             <div>
                                 <strong>${u.username}</strong> 
-                                ${u.complaints > 0 ? `<span style="color: var(--danger); font-size: 0.8rem; font-weight: bold;">(${u.complaints} shikoyat)</span>` : ''} 
-                                ${u.is_banned ? `<span class="complaints-badge">BANNED</span>` : ''}
+                                ${u.complaints > 0 ? `<span style="color: var(--danger); font-size: 0.8rem; font-weight: bold;">${t('admin.complaints_badge', { n: u.complaints })}</span>` : ''} 
+                                ${u.is_banned ? `<span class="complaints-badge">${t('admin.banned')}</span>` : ''}
+                                ${u.vip ? `<span style="color: var(--accent); font-size: 0.75rem; font-weight: bold;">${t('admin.vip_badge')}</span>` : ''}
                                 <br>
-                                <small>ID: ${u.id} | ${u.country || 'Noma\'lum'}</small>
+                                <small>ID: ${u.id} | ${u.country || t('admin.unknown_country')}</small>
                             </div>
                         </div>
                         <div style="display: flex; flex-direction: column; gap: 5px; align-items: flex-end;">
+                            <button class="btn btn-primary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="fillIdAndSwitch(${u.id})">${t('admin.btn_grant')}</button>
                             ${u.is_banned
-                        ? `<button class="btn btn-success" style="background: var(--success); color: white; padding: 4px 8px; font-size: 0.75rem;" onclick="quickBanAction(${u.id}, 'unban')">Blokdan ochish</button>`
+                        ? `<button class="btn btn-success" style="background: var(--success); color: white; padding: 4px 8px; font-size: 0.75rem;" onclick="quickBanAction(${u.id}, 'unban')">${t('admin.btn_unban')}</button>`
                         : `
                                 <div style="display: flex; gap: 5px;">
-                                    <select id="ban-dur-${u.id}" style="padding: 2px; font-size: 0.7rem; background: #222; color: white; border: 1px solid #444; border-radius: 4px;">
-                                        <option value="1">1 kun</option>
-                                        <option value="7">1 hafta</option>
-                                        <option value="15">15 kun</option>
-                                        <option value="30">1 oy</option>
-                                        <option value="forever">Umrbod</option>
-                                    </select>
-                                    <button class="btn btn-danger" style="padding: 4px 8px; font-size: 0.75rem;" onclick="quickBanAction(${u.id}, 'ban')">Bloklash</button>
+                                    ${banDurationSelectHtml(u.id)}
+                                    <button class="btn btn-danger" style="padding: 4px 8px; font-size: 0.75rem;" onclick="quickBanAction(${u.id}, 'ban')">${t('admin.btn_ban')}</button>
                                 </div>`
                     }
                         </div>
                     </div>
                 `;
             } catch (err) {
-                container.innerHTML = '<p>Xatolik yuz berdi</p>';
+                container.innerHTML = '<p>' + t('admin.generic_error') + '</p>';
             }
         }
 
@@ -633,7 +1078,7 @@
                 const users = await res.json();
 
                 if (users.length === 0) {
-                    container.innerHTML = '<p>Hozircha ko\'p shikoyat tushganlar yo\'q.</p>';
+                    container.innerHTML = '<p>' + t('admin.no_complaints') + '</p>';
                     return;
                 }
 
@@ -642,26 +1087,20 @@
                         <div style="display: flex; align-items: center; gap: 15px;">
                             <img src="${u.avatar}" style="width: 40px; height: 40px; border-radius: 8px;">
                             <div>
-                                <strong>${u.username}</strong> <span style="color: var(--danger); font-size: 0.8rem;">(${u.complaints} shikoyat)</span><br>
-                                <small>ID: ${u.id} | ${u.country || 'Noma\'lum'}</small>
+                                <strong>${u.username}</strong> <span style="color: var(--danger); font-size: 0.8rem;">${t('admin.complaints_badge', { n: u.complaints })}</span><br>
+                                <small>ID: ${u.id} | ${u.country || t('admin.unknown_country')}</small>
                             </div>
                         </div>
                         <div style="display: flex; gap: 5px;">
-                            ${u.is_banned ? '<span class="complaints-badge">BANNED</span>' : `
-                                <select id="ban-dur-${u.id}" style="padding: 2px; font-size: 0.7rem; background: #222; color: white; border: 1px solid #444; border-radius: 4px;">
-                                    <option value="1">1 kun</option>
-                                    <option value="7">1 hafta</option>
-                                    <option value="15">15 kun</option>
-                                    <option value="30">1 oy</option>
-                                    <option value="forever">Umrbod</option>
-                                </select>
-                                <button class="btn btn-danger" style="padding: 4px 8px; font-size: 0.75rem;" onclick="quickBanAction(${u.id}, 'ban')">Bloklash</button>
+                            ${u.is_banned ? `<span class="complaints-badge">${t('admin.banned')}</span>` : `
+                                ${banDurationSelectHtml(u.id)}
+                                <button class="btn btn-danger" style="padding: 4px 8px; font-size: 0.75rem;" onclick="quickBanAction(${u.id}, 'ban')">${t('admin.btn_ban')}</button>
                             `}
                         </div>
                     </div>
                 `).join('');
             } catch (err) {
-                container.innerHTML = '<p>Yuklashda xatolik</p>';
+                container.innerHTML = '<p>' + t('admin.load_failed') + '</p>';
             }
         }
 
@@ -680,16 +1119,22 @@
                     loadComplaints(); // reload complaints list
                 }
             } catch (err) {
-                alert('Tizim xatoligi yuz berdi');
+                alert(t('admin.system_error'));
             }
         }
 
 
-        function fillIdAndSwitch(id) {
-            document.getElementById('balance-user-id').value = id;
+        function fillIdAndSwitch(id, target) {
             showTab('dashboard');
-            // Focus on amount after a short delay to allow tab switch animation
-            setTimeout(() => document.getElementById('balance-amount').focus(), 100);
+            if (target === 'vip') {
+                document.getElementById('vip-user-id').value = id;
+                const card = document.getElementById('vip-grant-card');
+                if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                setTimeout(() => document.getElementById('vip-days').focus(), 150);
+            } else {
+                document.getElementById('balance-user-id').value = id;
+                setTimeout(() => document.getElementById('balance-amount').focus(), 100);
+            }
         }
 
         async function addBalance() {
@@ -700,7 +1145,7 @@
 
             const uid = parseInt(userId, 10);
             if (!userId || !Number.isFinite(uid) || uid < 1) {
-                alert.innerText = 'To‘g‘ri foydalanuvchi ID kiriting';
+                alert.innerText = t('admin.err_user_id');
                 alert.className = 'alert alert-error';
                 alert.style.display = 'block';
                 return;
@@ -708,18 +1153,20 @@
 
             const amount = parseInt(amountRaw, 10);
             if (!Number.isFinite(amount) || amount < 1) {
-                alert.innerText = 'Miqdor musbat butun son bo‘lishi kerak';
+                alert.innerText = t('admin.err_amount');
                 alert.className = 'alert alert-error';
                 alert.style.display = 'block';
                 return;
             }
+
+            const operation = document.getElementById('balance-operation').value || 'add';
 
             try {
                 const res = await fetch('/api/admin/add-balance', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'same-origin',
-                    body: JSON.stringify({ user_id: uid, amount, currency })
+                    body: JSON.stringify({ user_id: uid, amount, currency, operation })
                 });
                 const result = await res.json().catch(() => ({}));
 
@@ -731,7 +1178,53 @@
                     document.getElementById('balance-user-id').value = '';
                 }
             } catch (err) {
-                alert.innerText = 'Tarmoq xatoligi';
+                alert.innerText = t('admin.network_error');
+                alert.className = 'alert alert-error';
+                alert.style.display = 'block';
+            }
+        }
+
+        async function grantVip() {
+            const userIdRaw = document.getElementById('vip-user-id').value.trim();
+            const daysRaw = document.getElementById('vip-days').value.trim();
+            const alert = document.getElementById('vip-alert');
+
+            const uid = parseInt(userIdRaw, 10);
+            if (!userIdRaw || !Number.isFinite(uid) || uid < 1) {
+                alert.innerText = t('admin.err_user_id');
+                alert.className = 'alert alert-error';
+                alert.style.display = 'block';
+                return;
+            }
+
+            const days = parseInt(daysRaw, 10);
+            if (!Number.isFinite(days) || days < 1) {
+                alert.innerText = t('admin.err_days');
+                alert.className = 'alert alert-error';
+                alert.style.display = 'block';
+                return;
+            }
+
+            const operation = document.getElementById('vip-operation')?.value || 'add';
+
+            try {
+                const res = await fetch('/api/admin/add-balance', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ user_id: uid, amount: days, currency: 'vip', operation })
+                });
+                const result = await res.json().catch(() => ({}));
+
+                alert.innerText = result.message || (res.ok ? 'OK' : 'So‘rov bajarilmadi');
+                alert.className = result.success ? 'alert alert-success' : 'alert alert-error';
+                alert.style.display = 'block';
+
+                if (result.success) {
+                    document.getElementById('vip-user-id').value = '';
+                }
+            } catch (err) {
+                alert.innerText = t('admin.network_error');
                 alert.className = 'alert alert-error';
                 alert.style.display = 'block';
             }
@@ -757,7 +1250,7 @@
 
                 if (result.success) document.getElementById('broadcast-text').value = '';
             } catch (err) {
-                alert.innerText = 'Xatolik yuz berdi';
+                alert.innerText = t('admin.generic_error');
                 alert.style.display = 'block';
             }
         }
@@ -771,11 +1264,11 @@
                 // Registrations
                 const regContainer = document.getElementById('registration-stats');
                 const intervals = [
-                    { label: 'Bugun', value: data.day },
-                    { label: 'Shu hafta', value: data.week },
-                    { label: 'Shu oy', value: data.month },
-                    { label: 'Shu yil', value: data.year },
-                    { label: 'Jami', value: data.total }
+                    { label: t('admin.reg_today'), value: data.day },
+                    { label: t('admin.reg_week'), value: data.week },
+                    { label: t('admin.reg_month'), value: data.month },
+                    { label: t('admin.reg_year'), value: data.year },
+                    { label: t('admin.reg_total'), value: data.total }
                 ];
                 regContainer.innerHTML = intervals.map(i => `
                     <div class="stat-card">
@@ -800,7 +1293,7 @@
                 countryContainer.innerHTML = data.countries.map(c => `
                     <div style="margin-bottom: 15px;">
                         <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
-                            <span>${getFlagEmoji(c.name)} ${c.name || 'Noma\'lum'}</span>
+                            <span>${getFlagEmoji(c.name)} ${c.name || t('admin.unknown_country')}</span>
                             <span style="font-weight: 600;">${c.count}</span>
                         </div>
                         <div class="progress-bar-wrap">
@@ -838,14 +1331,14 @@
                             <small>ID: ${a.user_id} | Roli: <span style="color: ${a.role === 'superadmin' ? 'var(--accent)' : 'var(--primary)'}">${a.role}</span></small>
                         </div>
                         <div style="display: flex; gap: 10px;">
-                            ${a.role === 'moderator' ? `<button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.8rem;" onclick="manageAdminAction('update_role', ${a.user_id}, 'superadmin')">Promote</button>` : ''}
-                            ${a.role === 'superadmin' && a.user_id != 1 ? `<button class="btn btn-accent" style="padding: 6px 12px; font-size: 0.8rem;" onclick="manageAdminAction('update_role', ${a.user_id}, 'moderator')">Demote</button>` : ''}
-                            <button class="btn btn-danger" style="padding: 6px 12px; font-size: 0.8rem;" onclick="manageAdminAction('delete', ${a.user_id})">O'chirish</button>
+                            ${a.role === 'moderator' ? `<button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.8rem;" onclick="manageAdminAction('update_role', ${a.user_id}, 'superadmin')">${t('admin.promote')}</button>` : ''}
+                            ${a.role === 'superadmin' && a.user_id != 1 ? `<button class="btn btn-accent" style="padding: 6px 12px; font-size: 0.8rem;" onclick="manageAdminAction('update_role', ${a.user_id}, 'moderator')">${t('admin.demote')}</button>` : ''}
+                            <button class="btn btn-danger" style="padding: 6px 12px; font-size: 0.8rem;" onclick="manageAdminAction('delete', ${a.user_id})">${t('admin.delete')}</button>
                         </div>
                     </div>
                 `).join('');
             } catch (err) {
-                container.innerHTML = '<p>Adminlar ro\'yxatini yuklab bo\'lmadi</p>';
+                container.innerHTML = '<p>' + t('admin.admin_load_failed') + '</p>';
             }
         }
 
@@ -886,12 +1379,13 @@
                     loadAdmins();
                 }
             } catch (err) {
-                alert.innerText = 'Xatolik yuz berdi';
+                alert.innerText = t('admin.generic_error');
                 alert.style.display = 'block';
             }
         }
 
         // Initialize
+        i18n = SiteI18n.applySiteI18n('admin');
         checkRole();
     </script>
 </body>

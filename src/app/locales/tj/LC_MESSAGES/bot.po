@@ -1,0 +1,378 @@
+# tj translations for PROJECT.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the PROJECT project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-05-16 14:52+0500\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: tj\n"
+"Language-Team: tj <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+msgid ""
+"Hey! Get ready to dive into the ultimate Spin the Bottle adventure.\n"
+"\n"
+"👀 See who's around you and start a conversation\n"
+"🎁 Exchange fun surprises and playful dares\n"
+"💌 Send hidden messages to someone special\n"
+"🎲 Enjoy entertaining games together in the room\n"
+"🎶 Play along with music in the background\n"
+"\n"
+"🎮 Tap PLAY and let the fun start!\n"
+"\n"
+"⭐ Buy Stars: /store"
+msgstr ""
+"Салом! Ба моҷиботи Spin the Bottle омодаед?\n"
+"\n"
+"👀 Одамони атрофро бинед\n"
+"🎁 Сюрпризҳо ва вазифаҳо мубодила кунед\n"
+"💌 Паёми пинҳонӣ фиристед\n"
+"🎲 Дар ҳуҷра якҷоя бозӣ кунед\n"
+"🎶 Бо мусиқии фон бозӣ кунед\n"
+"\n"
+"🎮 PLAY пахш кунед!\n"
+"\n"
+"⭐ Stars харид: /store"
+
+msgid "Mini App is not configured yet. Set TELEGRAM_WEBAPP_URL in .env."
+msgstr "Mini App ҳанӯз танзим нашудааст. TELEGRAM_WEBAPP_URL-ро дар .env гузоред."
+
+msgid "🎮 PLAY"
+msgstr "🎮 БОЗӢ"
+
+msgid "⭐ Stars store"
+msgstr "⭐ Stars мағоза"
+
+msgid ""
+"⭐ <b>Stars store</b>\n"
+"\n"
+"Choose a package or <b>Custom amount</b> to enter your own value.\n"
+"After payment, the same number of ★ Stars will be added to your balance.\n"
+"\n"
+"Select a package or amount — Telegram invoice will arrive."
+msgstr ""
+"⭐ <b>Stars мағоза</b>\n"
+"\n"
+"Баста ё пакет интихоб кунед ё <b>Маблағи дигар</b>.\n"
+"Пас аз пардохт ★ Stars ба баланс илова мешавад.\n"
+"\n"
+"Пакет интихоб кунед — ҳисоби Telegram мерасад."
+
+#, python-format
+msgid "Current balance: <b>%(sc)s</b> ★ Stars"
+msgstr "Баланси ҷорӣ: <b>%(sc)s</b> ★ Stars"
+
+#, python-format
+msgid "Gift tokens: <b>%(gt)s</b>"
+msgstr "Токенҳои тӯҳфа: <b>%(gt)s</b>"
+
+msgid "Open the game first: /start → PLAY, then send /store again."
+msgstr "Аввал бозиро кушоед: /start → PLAY, баъд /store."
+
+msgid "✏️ Custom amount"
+msgstr "✏️ Маблағи дигар"
+
+#, python-format
+msgid ""
+"How many ★ Stars do you want?\n"
+"Send a number (e.g. <code>150</code>).\n"
+"Range: %(min)s — %(max)s\n"
+"\n"
+"Cancel: /store"
+msgstr ""
+"Чанд ★ Stars мехоҳед?\n"
+"Рақам фиристед (масалан: <code>150</code>).\n"
+"Диапазон: %(min)s — %(max)s\n"
+"\n"
+"Бекор: /store"
+
+#, python-format
+msgid ""
+"Send a whole number only (e.g. 100).\n"
+"%(err)s"
+msgstr ""
+"Танҳо рақами бутун фиристед (масалан: 100).\n"
+"%(err)s"
+
+#, python-format
+msgid "Amount must be a whole number from %(min)s to %(max)s."
+msgstr "Маблағ аз %(min)s то %(max)s бояд бутун рақам бошад."
+
+msgid "Open the game first: /start → PLAY"
+msgstr "Аввал бозиро кушоед: /start → PLAY"
+
+#, python-format
+msgid "✅ Invoice for %(stars)s ★ sent — confirm payment."
+msgstr "✅ Ҳисоб барои %(stars)s ★ фиристода шуд — пардохтро тасдиқ кунед."
+
+msgid ""
+"Invoice was not sent. Check that you have not blocked the bot, or try "
+"again later."
+msgstr "Ҳисоб фиристода нашуд. Ботро блок накардаед ё дер боз кӯшиш кунед."
+
+msgid "Invalid package"
+msgstr "Пакети нодуруст"
+
+msgid "This package is not available"
+msgstr "Ин пакет дастрас нест"
+
+msgid "Open the game first (/start → PLAY)"
+msgstr "Аввал бозиро кушоед (/start → PLAY)"
+
+msgid "Invoice sent — confirm payment"
+msgstr "Ҳисоб фиристода шуд — пардохтро тасдиқ кунед"
+
+msgid ""
+"Invoice was not sent. Make sure the bot is not blocked in Telegram, or "
+"try /start again."
+msgstr "Ҳисоб фиристода нашуд. Ботро блок накунед ё /start-ро такрор кунед."
+
+msgid "Invalid order"
+msgstr "Фармоиши нодуруст"
+
+#, python-format
+msgid ""
+"✅ Payment received: +%(paid)s ★\n"
+"Current balance: %(sc)s ★ Stars\n"
+"You can return to the game and continue shopping."
+msgstr ""
+"✅ Пардохт қабул шуд: +%(paid)s ★\n"
+"Баланси ҷорӣ: %(sc)s ★ Stars\n"
+"Ба бозӣ баргашта харидро давом диҳед."
+
+msgid ""
+"⭐ <b>Spin Bottle</b>\n"
+"Top up Telegram Stars — then return to the game to shop."
+msgstr ""
+"⭐ <b>Spin Bottle</b>\n"
+"Telegram Stars пур кунед — баъд ба бозӣ баргардед."
+
+#, python-format
+msgid "Spin Bottle — %(stars)s ★"
+msgstr "Spin Bottle — %(stars)s ★"
+
+#, python-format
+msgid ""
+"%(stars)s Stars will be added to your account. After payment you can "
+"return to the game."
+msgstr ""
+"Ба ҳисоби шумо %(stars)s Stars илова мешавад. Пас аз пардохт ба бозӣ "
+"баргардед."
+
+#, python-format
+msgid "%(stars)s Telegram Stars top-up"
+msgstr "%(stars)s Telegram Stars пуркунӣ"
+
+#, python-format
+msgid "%(stars)s Stars"
+msgstr "%(stars)s Stars"
+
+msgid "🎮 Play"
+msgstr "🎮 Бозӣ"
+
+msgid "🎮 Start the game"
+msgstr "🎮 Бозиро оғоз кардан"
+
+msgid "⭐ Buy Stars"
+msgstr "⭐ Stars харид"
+
+#, python-format
+msgid "Hello %(victim)s! %(new_owner)s took %(target)s away from your court."
+msgstr ""
+"Салом %(victim)s! %(new_owner)s %(target)s-ро аз ғамхории шумо ба худаш "
+"гирифт."
+
+msgid "🛠 Admin panel"
+msgstr "🛠 Панели админ"
+
+msgid "🛠 <b>Admin panel</b>\n\nChoose an action:"
+msgstr "🛠 <b>Панели админ</b>\n\nАмалро интихоб кунед:"
+
+msgid "📥 Create DB backup"
+msgstr "📥 Нусхаи DB гирифтан"
+
+msgid "📤 Restore from backup"
+msgstr "📤 Аз нусха барқарор кардан"
+
+msgid "⛔ Access denied."
+msgstr "⛔ Дастрасӣ манъ аст."
+
+msgid "⏳ Creating backup, please wait…"
+msgstr "⏳ Нусха сохта мешавад, интизор шавед…"
+
+#, python-format
+msgid "✅ Backup ready.\nTables: <b>%(tables)s</b>\nRows: <b>%(rows)s</b>"
+msgstr ""
+"✅ Нусха омодааст.\nҶадвалҳо: <b>%(tables)s</b>\nСатрҳо: <b>%(rows)s</b>"
+
+msgid ""
+"📤 Send the backup file as a <b>document</b> (<code>.json.gz</code> or "
+"<code>.json</code>)."
+msgstr ""
+"📤 Файли нусхаро ҳамчун <b>ҳуҷҷат</b> фиристед (<code>.json.gz</code> ё "
+"<code>.json</code>)."
+
+#, python-format
+msgid ""
+"📂 Backup loaded.\nTables: <b>%(tables)s</b>, rows: <b>%(rows)s</b>\n\n"
+"Choose restore mode:"
+msgstr ""
+"📂 Нусха бор шуд.\nҶадвалҳо: <b>%(tables)s</b>, сатрҳо: <b>%(rows)s</b>\n\n"
+"Режими барқарорсозиро интихоб кунед:"
+
+msgid "➕ Restore missing rows only"
+msgstr "➕ Фақат сатрҳои гумшуда"
+
+msgid "⚠️ Full DB replace"
+msgstr "⚠️ Ивази пурраи DB"
+
+msgid "❌ Cancel"
+msgstr "❌ Бекор"
+
+#, python-format
+msgid "✅ Merge complete. Rows added: <b>%(inserted)s</b>"
+msgstr "✅ Иттилоқ анҷом ёфт. Сатрҳои иловашуда: <b>%(inserted)s</b>"
+
+#, python-format
+msgid "✅ Full restore complete. Rows restored: <b>%(rows)s</b>"
+msgstr "✅ Барқарорсозии пурра. Сатрҳо: <b>%(rows)s</b>"
+
+#, python-format
+msgid "❌ Restore failed: %(error)s"
+msgstr "❌ Хатои барқарорсозӣ: %(error)s"
+
+msgid "❌ Invalid backup file."
+msgstr "❌ Файли нодуруст."
+
+msgid ""
+"⚠️ <b>Full replace</b> will erase current database data and load the backup. "
+"Continue?"
+msgstr ""
+"⚠️ <b>Ивази пурра</b> маълумоти ҷории DB-ро нест карда, нусхаро бор мекунад. "
+"Давом?"
+
+msgid "⚠️ Yes, replace all"
+msgstr "⚠️ Бале, ҳамаро иваз кун"
+
+msgid "Cancelled."
+msgstr "Бекор шуд."
+
+msgid "🤝 Referral & partners"
+msgstr "🤝 Реферал ва шарикон"
+
+msgid "🤝 <b>Referral & partners</b>\n\nChoose:"
+msgstr "🤝 <b>Реферал ва шарикон</b>\n\nИнтихоб кунед:"
+
+msgid "📋 Partner list"
+msgstr "📋 Рӯйхати шарикон"
+
+msgid "➕ Add partner"
+msgstr "➕ Шарик илова кардан"
+
+msgid "⚙️ Default referral bonus"
+msgstr "⚙️ Бонуси оддии реферал"
+
+msgid "◀️ Back"
+msgstr "◀️ Бозгашт"
+
+msgid "No partners yet."
+msgstr "Шарикон ҳоло нест."
+
+#, python-format
+msgid "<b>Partners</b> (%(count)s):"
+msgstr "<b>Шарикон</b> (%(count)s):"
+
+#, python-format
+msgid ""
+"• <code>%(code)s</code> — %(name)s\n"
+"  bonus: <b>%(bonus)s</b> | limit/day: <b>%(limit)s</b>\n"
+"  guests: <b>%(guests)s</b> | today: <b>%(today)s</b>/%(limit)s"
+msgstr ""
+"• <code>%(code)s</code> — %(name)s\n"
+"  бонус: <b>%(bonus)s</b> | лимити рӯз: <b>%(limit)s</b>\n"
+"  меҳмонон: <b>%(guests)s</b> | имрӯз: <b>%(today)s</b>/%(limit)s"
+
+#, python-format
+msgid ""
+"<b>Partner</b> #%(id)s\n"
+"User: <b>%(user_id)s</b> %(name)s\n"
+"Code: <code>%(code)s</code>\n"
+"Per invite: <b>%(bonus)s</b> hearts\n"
+"Daily limit: <b>%(limit)s</b>\n"
+"Invited guests: <b>%(guests)s</b>\n"
+"Earned today: <b>%(today)s</b>\n"
+"Status: %(status)s"
+msgstr ""
+"<b>Шарик</b> #%(id)s\n"
+"Корбар: <b>%(user_id)s</b> %(name)s\n"
+"Код: <code>%(code)s</code>\n"
+"Барои даъват: <b>%(bonus)s</b> hearts\n"
+"Лимити рӯз: <b>%(limit)s</b>\n"
+"Даъватшудагон: <b>%(guests)s</b>\n"
+"Имрӯз: <b>%(today)s</b>\n"
+"Ҳолат: %(status)s"
+
+#, python-format
+msgid ""
+"<b>Default referral</b> (regular users)\n"
+"Per invite: <b>%(bonus)s</b> hearts\n"
+"Daily limit: <b>%(limit)s</b>"
+msgstr ""
+"<b>Реферали оддӣ</b>\n"
+"Барои даъват: <b>%(bonus)s</b> hearts\n"
+"Лимити рӯз: <b>%(limit)s</b>"
+
+msgid "✏️ Per-invite bonus"
+msgstr "✏️ Бонуси даъват"
+
+msgid "✏️ Daily limit"
+msgstr "✏️ Лимити рӯз"
+
+msgid "🔛 Toggle active"
+msgstr "🔛 Фаъол/ғайрифаъол"
+
+msgid "✅ Saved."
+msgstr "✅ Захира шуд."
+
+#, python-format
+msgid "❌ Error: %(error)s"
+msgstr "❌ Хато: %(error)s"
+
+msgid "Send partner user id, Telegram id, or login/username:"
+msgstr "User id, Telegram id ё login-и шарикро фиристед:"
+
+msgid ""
+"Send referral <b>partner code</b> (or <code>-</code> to use user's code):"
+msgstr ""
+"Коди шарик (<code>-</code> — коди корбар):"
+
+msgid "Send hearts per invite (integer):"
+msgstr "Hearts барои даъват (адади бутун):"
+
+msgid "Send daily hearts limit (integer, 0 = unlimited):"
+msgstr "Лимити рӯзонаи hearts (0 = бе лимит):"
+
+msgid "User not found."
+msgstr "Корбар ёфт нашуд."
+
+msgid "Deactivate"
+msgstr "Хомӯш кардан"
+
+msgid "Activate"
+msgstr "Фаъол кардан"
+
+msgid "Active"
+msgstr "Фаъол"
+
+msgid "Inactive"
+msgstr "Ғайрифаъол"
+

@@ -20,34 +20,54 @@ import jwt as pyjwt
 from fastapi import WebSocket
 
 from src.app.api.game_session import game_sessions
-from src.app.core.jwt import verify_access_token
 from src.app.api.ws.constants import (
     ADMIN_DISPLAY_HEARTS,
     ADMIN_DISPLAY_STARS,
     BOOSTER_TYPES,
+    BOTTLE_PRICES,
     BOTTLE_TYPES,
-    DEFAULT_BOTTLE_TYPE,
     COMPLIMENT_GOLD_REWARD,
     COMPLIMENTS_TO_REWARD,
     DAILY_BONUS_GOLD,
+    DEFAULT_BOTTLE_TYPE,
+    BOMB_GIFT_TYPES,
+    DYNAMITE_DRINK_TYPE,
+    DRINK_IDS_RECEIVER_HEART_PLUS_1,
     DRINK_PRICES,
     DRINK_TYPES,
     GESTURE_PRICES,
     GESTURE_TYPES,
     GIFT_PRICES,
+    GIFT_LOVE_ITEM_ID,
+    GIFT_LOVE_UNLIMITED_MIN,
     GIFT_TYPES,
+    GIFT_TYPES_FREE,
+    GIFT_TYPES_VIP,
     HAT_PRICES,
     HAT_TYPES,
+    KICKOUT_STREAK_RESET_SECONDS,
     KISS_BONUS_GOLD,
     RETENTION_BONUS_GOLD,
     REWARDED_VIDEO_GOLD,
+    BOTTLE_PLAIN_IDLE_DISCONNECT_MS,
     STATE_OFFER,
+    STATE_SELECT,
+    STATE_SPINNING,
     STATE_WAIT,
     WELCOME_BONUS_GOLD,
-    KICKOUT_STREAK_RESET_SECONDS,
+    league_state_for_total_kisses,
+    league_tier_from_total_kisses,
     kickout_price_for_use_index,
     kickout_streak_effective_uses,
 )
+from src.app.api.ws.player import (
+    Player,
+    achievement_level_to_client,
+    parse_birth_date_ms,
+)
+from src.app.api.ws.table import Table, normalize_ws_user_ref
+from src.app.api.ws.utils import prepare_packet
+from src.app.core.jwt import verify_access_token
 from src.app.core.room_policy import (
     BASE_VISIBLE_COUNTRY,
     BASE_VISIBLE_GLOBAL,
@@ -58,15 +78,49 @@ from src.app.core.room_policy import (
     player_may_join_room_row,
     visible_room_prefix_len,
 )
-from src.app.api.ws.player import Player, parse_birth_date_ms
-from src.app.api.ws.table import Table
-from src.app.api.ws.utils import prepare_packet
 from src.app.database.repositories.game import GameRepository
 
 log = logging.getLogger("spinbottle")
 
 # Haydalgandan keyin shu stolga qayta kirish (ms)
 KICK_REENTRY_BAN_MS = 15 * 60 * 1000
+# HTML5: ikkinchi qurilma — eski WS `reason` (klient dialog uchun)
+DUPLICATE_DEVICE_CLOSE_REASON = "DUPLICATE_DEVICE_LOGIN"
+IDLE_TIMEOUT_CLOSE_REASON = "IDLE_TIMEOUT_10M"
+# RFC 6455: 4000–4999 ilova kodi; `reason` ba'zi proksilarda yo'qoladi — klient 4410 ni taniydi.
+IDLE_TIMEOUT_WS_CLOSE_CODE = 4410
+# plain_ws: 10 daqiqa idle — bu turlar faollik sifatida hisoblanmaydi (telemetriya / fon).
+PLAIN_WS_IDLE_IGNORE_TYPES: frozenset[str] = frozenset(
+    {
+        "ping",
+        "kickout_refresh",
+        "view",
+        "report_activity",
+        "report_issue",
+        "report_photo",
+        "track_event",
+        "client_event",
+        "set_push_token",
+        "set_friends_visibility",
+        "mark_friends_invited",
+        "fix_referrer_type",
+        "reset_achievements_ms",
+        "inbox_delete",
+        "youtube_error",
+        "rewarded_video_start",
+        "rewarded_video_have_ads",
+        "rewarded_video_no_ads",
+        "rewarded_video_error",
+        "interstitial_video_start",
+        "interstitial_video_finish",
+        "interstitial_video_no_ads",
+        "interstitial_video_error",
+        "goto_interstitial",
+        "set_interactive_hints",
+        "get_favorite_songs",
+        "mark_song_favorite",
+    }
+)
 # `spinbottle` logger uchun INFO darajasini yoqamiz va uvicorn handler'iga
 # propagate qilamiz (agar root da handler bo'lsa). Aks holda StreamHandler qo'shamiz.
 log.setLevel(logging.INFO)
@@ -88,6 +142,65 @@ class GameManager:
         self._tasks_started = False
         # (table_id, "u"|"g", id) → unix_ms gacha bu stolga kira olmaydi
         self._table_kick_reentry_until: Dict[Tuple[str, str, int | str], int] = {}
+        self._idle_sweeper_started = False
+
+    def _find_duplicate_plain_player(self, table: Table, player: Player) -> Optional[Player]:
+        """Bir xil akkaunt (db_id) shu stolda allaqachon onlayn bo'lsa — eski sessiya."""
+        db = getattr(player, "db_id", None)
+        if db is None:
+            return None
+        for ep in table.players.values():
+            eid = getattr(ep, "db_id", None)
+            if eid is not None and int(eid) == int(db):
+                return ep
+        return None
+
+    async def _bottle_plain_idle_sweep(self) -> None:
+        """HTML5 stol: 10 daqiqa klientdan haqiqiy faollik yo'q bo'lsa ulanishni yopish."""
+        while True:
+            try:
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                break
+            try:
+                now = self._ts()
+                for ws in list(self.ws_map.keys()):
+                    try:
+                        pair = self.ws_map.get(ws)
+                        if not pair:
+                            continue
+                        tid, uid = pair
+                        table = self.tables.get(tid)
+                        if not table:
+                            continue
+                        pl = table.get_player(uid)
+                        if not pl or not getattr(pl, "plain_ws", False):
+                            continue
+                        last = int(getattr(pl, "last_activity_ms", 0) or 0)
+                        if (
+                            last
+                            and now - last >= BOTTLE_PLAIN_IDLE_DISCONNECT_MS
+                            and pl.ws is ws
+                        ):
+                            try:
+                                log.info(
+                                    "idle_disconnect: table=%s user=%s idle_ms=%s",
+                                    tid,
+                                    uid,
+                                    now - last,
+                                )
+                                await ws.close(
+                                    code=IDLE_TIMEOUT_WS_CLOSE_CODE,
+                                    reason=IDLE_TIMEOUT_CLOSE_REASON,
+                                )
+                            except Exception:
+                                pass
+                    except Exception as e:
+                        log.debug("idle sweep row: %s", e)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.warning("idle sweep: %s", e)
 
     def set_db_factory(self, factory):
         self._db_factory = factory
@@ -102,6 +215,9 @@ class GameManager:
             loop = asyncio.get_running_loop()
             if loop.is_running():
                 asyncio.create_task(self._rabbit_scheduler())
+                if not self._idle_sweeper_started:
+                    self._idle_sweeper_started = True
+                    asyncio.create_task(self._bottle_plain_idle_sweep())
                 self._tasks_started = True
                 log.info("GameManager background tasks started.")
         except RuntimeError:
@@ -184,6 +300,32 @@ class GameManager:
         t = self.tables.get(str(room_id_str))
         return t.player_count() if t else 0
 
+    def get_online_presence_stats(self) -> dict:
+        """Admin: hozir nechta o'yinchi onlayn (WS + stollar)."""
+        db_ids: set[int] = set()
+        guests = 0
+        in_rooms = 0
+        active_tables = 0
+        for table in self.tables.values():
+            n = table.player_count()
+            if n <= 0:
+                continue
+            active_tables += 1
+            in_rooms += n
+            for p in table.players.values():
+                rid = getattr(p, "db_id", None)
+                if rid:
+                    db_ids.add(int(rid))
+                else:
+                    guests += 1
+        return {
+            "websocket_connections": len(self.ws_map),
+            "unique_registered": len(db_ids),
+            "guests": guests,
+            "total_in_rooms": in_rooms,
+            "active_tables": active_tables,
+        }
+
     async def _visible_country_and_global_rows(self, country: str):
         """Ko'rinadigan (bandlik bo'yicha ochilgan) mamlakat + global stollar."""
         c = normalize_country_code(country)
@@ -210,12 +352,16 @@ class GameManager:
         )
         return country_rows[:vn], global_rows[:vg]
 
-    async def _room_id_is_visible_for_country(self, country: str, room_id_str: str) -> bool:
+    async def _room_id_is_visible_for_country(
+        self, country: str, room_id_str: str
+    ) -> bool:
         c_vis, g_vis = await self._visible_country_and_global_rows(country)
         ids = {str(r.id) for r in c_vis + g_vis}
         return str(room_id_str) in ids
 
-    async def _default_join_room_id_for_player(self, repo: GameRepository, player: Player) -> str:
+    async def _default_join_room_id_for_player(
+        self, repo: GameRepository, player: Player
+    ) -> str:
         """Mamlakat stollaridan birinchisi (ko'rinadiganlar ichidan, joy bo'lsa)."""
         c = normalize_country_code(player.country or "UZBEKISTAN")
         db_all = await repo.get_rooms_by_country(c)
@@ -297,6 +443,8 @@ class GameManager:
                     if db_user and not db_user.wallet:
                         await repo.ensure_wallet(real_uid)
                         db_user = await repo.get_user_with_wallet(real_uid)
+                    if db_user:
+                        await repo.sync_daily_login_streak(db_user)
             except Exception as e:
                 log.error(f"DB xatosi (connect): {e}")
 
@@ -316,6 +464,15 @@ class GameManager:
                     player.total_spins = await repo.get_stat_total_value(
                         rid, "bottle_spin"
                     )
+                    dj_cnt = await repo.get_stat_total_value(rid, "donjuan")
+                    dj_tier = 0
+                    for i, th in enumerate(self.ACHIEVEMENTS["donjuan"]["counters"]):
+                        if dj_cnt >= th:
+                            dj_tier = i + 1
+                    await repo.upsert_user_achievement(
+                        rid, "donjuan", dj_tier, exact=True
+                    )
+                    player.achievements["donjuan"] = dj_tier
             except Exception as e:
                 log.debug(f"connect lifetime stats: {e}")
             try:
@@ -329,7 +486,10 @@ class GameManager:
                 f"Mehmon_{user_id[-4:]}" if len(user_id) > 4 else f"Mehmon_{user_id}"
             )
             player = Player(ws, user_id, g_name)
-            h = int(hashlib.md5(user_id.encode("utf-8"), usedforsecurity=False).hexdigest(), 16)
+            h = int(
+                hashlib.md5(user_id.encode("utf-8"), usedforsecurity=False).hexdigest(),
+                16,
+            )
             player.male = (h % 2) == 0
             player.gender = "male" if player.male else "female"
             log.warning(f"[+] Guest: {user_id} → table={table_id} ({player.gender})")
@@ -352,8 +512,33 @@ class GameManager:
             self.tables[table_id] = Table(table_id)
 
         table = self.tables[table_id]
+        dup = self._find_duplicate_plain_player(table, player)
+        if dup is not None and dup.ws is not ws:
+            old_ws = dup.ws
+            self.ws_map.pop(old_ws, None)
+            try:
+                await old_ws.close(
+                    code=1008, reason=DUPLICATE_DEVICE_CLOSE_REASON
+                )
+            except Exception:
+                pass
+            dup.ws = ws
+            if getattr(player, "session_token", None):
+                dup.session_token = player.session_token
+            dup.session_started = False
+            dup.last_activity_ms = self._ts()
+            dup._html5_ws_rebind = True
+            self.ws_map[ws] = (table_id, dup.id)
+            log.info(
+                "DUPLICATE_DEVICE: db_id=%s table=%s — eski WS yopildi, yangi ulanish",
+                getattr(dup, "db_id", None),
+                table_id,
+            )
+            return dup
+
         table.add_player(player)
         self.ws_map[ws] = (table_id, user_id)
+        player.last_activity_ms = self._ts()
         return player
 
     async def disconnect(self, ws: WebSocket):
@@ -365,6 +550,14 @@ class GameManager:
             return
 
         player = table.get_player(user_id)
+        if player and player.ws is not ws:
+            log.info(
+                "disconnect skip (ws almashtirilgan): user_id=%s table=%s",
+                user_id,
+                table_id,
+            )
+            return
+
         table.remove_player(user_id)
 
         if player:
@@ -401,14 +594,73 @@ class GameManager:
             )
         return rows
 
-    async def _connection_success_payload(self, player: Player, table: Table, ts: int) -> dict:
+    def _html5_sync_state_fields(self, table: Table) -> dict:
+        """
+        HTML5 (plain_ws): butilka / navbat / juftlik — stol.state va current_* bilan mos.
+        wait_offer yoki aylanish bosqichida yangi kiruvchi ham xuddi shu raundni ko‘radi.
+        """
+        table.repair_turn_seat_if_orphaned()
+        has_male = any(bool(getattr(p, "male", True)) for p in table.players.values())
+        has_female = any(
+            not bool(getattr(p, "male", True)) for p in table.players.values()
+        )
+        game_on = bool(has_male and has_female)
+        base = {
+            "bottle_seat": None,
+            "isSpinner": None,
+            "isTarget": None,
+            "isSpinner_choice": "",
+            "isTarget_choice": "",
+            "game_active": False,
+        }
+        if not game_on:
+            return base
+
+        spin_id = table.current_spinner
+        targ_id = table.current_target
+        if (
+            spin_id
+            and targ_id
+            and table.state
+            in (
+                STATE_OFFER,
+                STATE_SPINNING,
+                STATE_SELECT,
+            )
+        ):
+            spinner_p = table.get_player(spin_id)
+            target_p = table.get_player(targ_id)
+            if spinner_p and target_p:
+                return {
+                    "bottle_seat": target_p.seat + 1,
+                    "isSpinner": spin_id,
+                    "isTarget": targ_id,
+                    "isSpinner_choice": table.spinner_choice or "",
+                    "isTarget_choice": table.target_choice or "",
+                    "game_active": True,
+                }
+
         spinner = next(
             (p for p in table.players.values() if p.seat == table.turn_seat), None
         )
-        bottle_seat_1 = (spinner.seat + 1) if spinner else (table.bottle_seat + 1)
-        has_male = any(p.gender == "male" for p in table.players.values())
-        has_female = any(p.gender == "female" for p in table.players.values())
-        game_on = bool(has_male and has_female)
+        if not spinner:
+            players_list = sorted(table.players.values(), key=lambda p: p.seat)
+            if not players_list:
+                return base
+            spinner = players_list[0]
+        return {
+            "bottle_seat": spinner.seat + 1,
+            "isSpinner": spinner.id,
+            "isTarget": None,
+            "isSpinner_choice": "",
+            "isTarget_choice": "",
+            "game_active": True,
+        }
+
+    async def _connection_success_payload(
+        self, player: Player, table: Table, ts: int
+    ) -> dict:
+        sync = self._html5_sync_state_fields(table)
         recent_messages: list[dict] = []
         if self._db_factory and str(table.table_id).isdigit():
             try:
@@ -421,19 +673,19 @@ class GameManager:
         wf = player.wallet_for_client()
         return {
             "type": "connection_success",
-            "table_id": int(table.table_id)
-            if str(table.table_id).isdigit()
-            else table.table_id,
+            "table_id": (
+                int(table.table_id) if str(table.table_id).isdigit() else table.table_id
+            ),
             "seat_number": player.seat + 1,
             "game_username": player.username,
             "profile_picture": player.photo_url or "/photos/no_img.png",
             "table_players": self._table_players_html5(table),
-            "bottle_seat": bottle_seat_1 if game_on else None,
-            "isSpinner": spinner.id if spinner and game_on else None,
-            "isTarget": None,
-            "isSpinner_choice": "",
-            "isTarget_choice": "",
-            "game_active": game_on,
+            "bottle_seat": sync["bottle_seat"],
+            "isSpinner": sync["isSpinner"],
+            "isTarget": sync["isTarget"],
+            "isSpinner_choice": sync["isSpinner_choice"],
+            "isTarget_choice": sync["isTarget_choice"],
+            "game_active": sync["game_active"],
             "gender": self._gender_label_html5(player),
             "room_kiss_count": table.room_kiss_count,
             "game_start_timeout": None,
@@ -454,21 +706,28 @@ class GameManager:
         u = msg.get("user") or {}
         sid = str(u.get("id") or u.get("userId") or "")
         seat0 = int(u.get("seat") or 0)
+
+        sync = self._html5_sync_state_fields(table)
+
         return {
             "type": "player_joined",
             "user_id": sid,
             "seat_number": seat0 + 1,
             "game_username": u.get("name") or u.get("username") or "Bilinmeyen",
-            "profile_picture": u.get("photo_url") or u.get("image") or "/photos/no_img.png",
-            "bottle_seat": table.bottle_seat + 1 if table.bottle_seat is not None else None,
-            "isSpinner": None,
-            "isTarget": None,
-            "isSpinner_choice": "",
-            "isTarget_choice": "",
-            "game_active": True,
-            "gender": "Qadın"
-            if (u.get("gender") == "female")
-            else ("Kişi" if u.get("gender") == "male" else "Bilinmeyen"),
+            "profile_picture": u.get("photo_url")
+            or u.get("image")
+            or "/photos/no_img.png",
+            "bottle_seat": sync["bottle_seat"],
+            "isSpinner": sync["isSpinner"],
+            "isTarget": sync["isTarget"],
+            "isSpinner_choice": sync["isSpinner_choice"],
+            "isTarget_choice": sync["isTarget_choice"],
+            "game_active": sync["game_active"],
+            "gender": (
+                "Qadın"
+                if (u.get("gender") == "female")
+                else ("Kişi" if u.get("gender") == "male" else "Bilinmeyen")
+            ),
             "room_kiss_count": table.room_kiss_count,
             "game_start_timeout": None,
             "frame_name": u.get("frame") or "",
@@ -477,24 +736,28 @@ class GameManager:
             "ts": msg.get("ts") or self._ts(),
         }
 
-    def _game_leave_to_player_left(self, msg: dict) -> dict:
+    def _game_leave_to_player_left(self, msg: dict, table: Table) -> dict:
         u = msg.get("user") or {}
         seat0 = int(u.get("seat") or 0)
+
+        sync = self._html5_sync_state_fields(table)
+
         return {
             "type": "player_left",
             "user_id": str(u.get("id") or u.get("userId") or ""),
             "seat_number": seat0 + 1,
-            "bottle_seat": None,
-            "isSpinner": None,
-            "isTarget": None,
-            "isSpinner_choice": "",
-            "isTarget_choice": "",
-            "game_active": False,
+            "bottle_seat": sync["bottle_seat"],
+            "isSpinner": sync["isSpinner"],
+            "isTarget": sync["isTarget"],
+            "isSpinner_choice": sync["isSpinner_choice"],
+            "isTarget_choice": sync["isTarget_choice"],
+            "game_active": sync["game_active"],
             "game_start_timeout": None,
             "ts": msg.get("ts") or self._ts(),
         }
 
     async def _broadcast_html5_turn_state(self, table: Table):
+        table.repair_turn_seat_if_orphaned()
         spinner = next(
             (p for p in table.players.values() if p.seat == table.turn_seat), None
         )
@@ -545,7 +808,7 @@ class GameManager:
             if msg.get("type") == "game_join" and getattr(player, "plain_ws", False):
                 payload = self._game_join_to_player_joined(msg, table)
             elif msg.get("type") == "game_leave" and getattr(player, "plain_ws", False):
-                payload = self._game_leave_to_player_left(msg)
+                payload = self._game_leave_to_player_left(msg, table)
             player.stamp_out_packet(payload)
             await self._deliver(player, payload)
 
@@ -582,7 +845,9 @@ class GameManager:
                 w += 1
         return m, w
 
-    def _find_player_table(self, user_id_str: str) -> Optional[Tuple[str, Table, Player]]:
+    def _find_player_table(
+        self, user_id_str: str
+    ) -> Optional[Tuple[str, Table, Player]]:
         for tid, tbl in self.tables.items():
             pl = tbl.players.get(user_id_str)
             if pl:
@@ -610,7 +875,9 @@ class GameManager:
             "women": w,
         }
 
-    async def _login_payload_with_friends(self, player: Player, table_id: str, ts: int) -> dict:
+    async def _login_payload_with_friends(
+        self, player: Player, table_id: str, ts: int
+    ) -> dict:
         login_payload = player.to_login_payload(table_id, ts)
         recent_messages: list[dict] = []
         if self._db_factory and str(table_id).strip().isdigit():
@@ -672,7 +939,10 @@ class GameManager:
                 if not u:
                     return
                 la = u.kickout_last_at
-                expired = la is None or (now - la).total_seconds() > KICKOUT_STREAK_RESET_SECONDS
+                expired = (
+                    la is None
+                    or (now - la).total_seconds() > KICKOUT_STREAK_RESET_SECONDS
+                )
                 new_streak = 1 if expired else int(u.kickout_streak_count or 0) + 1
                 await repo.update_user_fields(
                     player.db_id,
@@ -690,7 +960,9 @@ class GameManager:
         if not last_ms or (now_ms - last_ms) > KICKOUT_STREAK_RESET_SECONDS * 1000:
             player.guest_kickout_streak = 1
         else:
-            player.guest_kickout_streak = int(getattr(player, "guest_kickout_streak", 0) or 0) + 1
+            player.guest_kickout_streak = (
+                int(getattr(player, "guest_kickout_streak", 0) or 0) + 1
+            )
         player.guest_kickout_last_ms = now_ms
 
     async def _emit_game_enter_join_and_turn(self, player: Player, tbl: Table, ts: int):
@@ -706,6 +978,24 @@ class GameManager:
                     )
             except Exception as e:
                 log.debug(f"game_enter recent_messages: {e}")
+        # Yutuqlar: login bilan bir xil format — DB dan yangilab (lazy bo‘lib qolmasin)
+        ach_list: list = []
+        if self._db_factory and player.db_id:
+            try:
+                async with self._db() as repo:
+                    fresh = await repo.get_user_achievements(int(player.db_id))
+                    for k, v in (fresh or {}).items():
+                        player.achievements[k] = int(v or 0)
+            except Exception as e:
+                log.debug("game_enter achievements: %s", e)
+        ach_list = [
+            {
+                "achievement_id": k,
+                "level": achievement_level_to_client(v),
+                "timestamp": ts,
+            }
+            for k, v in sorted((player.achievements or {}).items())
+        ]
         ge: dict = {
             "type": "game_enter",
             "game_id": tbl.table_id,
@@ -713,13 +1003,16 @@ class GameManager:
             "participants": tbl.all_participants(),
             "bottle_type": tbl.bottle_type,
             "scheduled": [],
-            "achievements": [],
+            "achievements": ach_list,
             "achievements_ms": 0,
             "recent_messages": recent_messages,
             "ts": ts + 5,
         }
         await self.send_to(player, ge)
         await asyncio.sleep(0.2)
+        await self._send_table_chat_history(player, tbl, ts)
+        await asyncio.sleep(0.15)
+        await self._send_table_music_sync(player, tbl)
         await self.broadcast(
             tbl.table_id,
             {"type": "game_join", "user": player.to_participant(), "ts": ts + 10},
@@ -740,9 +1033,12 @@ class GameManager:
         if not table or not player:
             return
 
-        t = data.get("type", "")
-        if t not in ("ping", "report_activity"):
-            log.debug(f"[{t}] ← {player.username}")
+        t = str(data.get("type", "") or "")
+        if getattr(player, "plain_ws", False) and t not in PLAIN_WS_IDLE_IGNORE_TYPES:
+            player.last_activity_ms = self._ts()
+        # Faqat idle hisobiga kiradigan xabarlar (telemetriya / fon — log va last_activity tashqari)
+        if t not in PLAIN_WS_IDLE_IGNORE_TYPES:
+            log.info(f"DEBUG_RECV: user={player.username} id={player.id} type={t} data={data}")
 
         # ── O'yin ──────────────────────────────────────────────────────────
         if t == "login":
@@ -822,6 +1118,8 @@ class GameManager:
                 player, {"type": "unblock_user", "ok": True, "ts": self._ts()}
             )
         # ── Do'stlar ────────────────────────────────────────────────────────
+        elif t == "mark_song_favorite":
+            await self._handle_mark_song_favorite(player, data)
         elif t == "get_friends":
             await self._handle_get_friends(player, data)
         elif t == "get_friend_games":
@@ -860,9 +1158,7 @@ class GameManager:
                 },
             )
         elif t == "get_favorite_songs":
-            await self.send_to(
-                player, {"type": "get_favorite_songs", "songs": [], "ts": self._ts()}
-            )
+            await self._handle_get_favorite_songs(player, data)
         elif t == "translate":
             await self._handle_translate(player, data)
         elif t == "view":
@@ -895,8 +1191,6 @@ class GameManager:
             await self._handle_pass_claim_level_reward(player, data)
         elif t == "pass_claim_chest_reward":
             await self._handle_pass_claim_chest_reward(player)
-        elif t == "activate_percent_bonus":
-            await self._handle_activate_percent_bonus(player)
         elif t == "gold2tokens":
             await self._handle_gold2tokens(player, data)
         elif t == "gold2tokens_get":
@@ -945,7 +1239,6 @@ class GameManager:
             "track_event",
             "client_event",
             "set_push_token",
-            "mark_song_favorite",
             "set_friends_visibility",
             "mark_friends_invited",
             "fix_referrer_type",
@@ -973,6 +1266,10 @@ class GameManager:
             await self._handle_like_user(player, data)
         elif t == "profile_clicked":
             await self._handle_profile_clicked(player, data)
+        elif t == "seat_clicked":
+            await self._handle_seat_clicked(table, player, data)
+        elif t == "shop_clicked":
+            await self._handle_shop_clicked(player, data)
         elif t == "compliment_next":
             await self._handle_compliment_next(player)
         elif t == "compliment_send":
@@ -981,8 +1278,106 @@ class GameManager:
             await self._handle_compliment_group(player)
         elif t == "gm_hearts_purchase":
             await self._handle_gm_hearts_purchase(player, data)
+        elif t == "tg_purchase":
+            await self._handle_tg_purchase(player, data)
+        elif t == "rabbit_gift_send":
+            await self._handle_rabbit_gift_send(player, data)
+        elif t == "rabbit_gift_caught":
+            await self._handle_rabbit_gift_caught(player, data)
         else:
             log.warning(f"[UNKNOWN] type={t!r} from {user_id}")
+
+    async def _handle_seat_clicked(self, table: Table, player: Player, data: dict):
+        """O'rin bosilganda: agar spinner o'z o'rnini (yoki butilkani) bossa — SPIN."""
+        try:
+            seat_idx = int(data.get("seat") if data.get("seat") is not None else -1)
+        except (ValueError, TypeError):
+            seat_idx = -1
+
+        log.info(f"WS-CLICK: {player.username} clicked seat={seat_idx}. Table state={table.state}, Turn seat={table.turn_seat}")
+
+        # HTML5 klientida butilkani bosish ko'pincha spinner o'rnini bosish bilan bir xil
+        if table.state == STATE_WAIT and player.seat == table.turn_seat:
+            # Agar o'z o'rnini yoki butilka turgan joyni bossa (seat_idx -1 bo'lsa ham butilka markazi deb hisoblaymiz)
+            if seat_idx == table.turn_seat or seat_idx == -1:
+                log.info(f"SPIN-EXEC: {player.username} triggered spin via click.")
+                await self._handle_game_turn(player)
+            else:
+                log.info(f"SPIN-SKIP: {player.username} clicked {seat_idx}, but their seat is {player.seat}")
+        else:
+            log.debug(f"CLICK-IGNORE: {player.username} clicked {seat_idx}, turn={table.turn_seat}, state={table.state}")
+
+    async def _apply_player_profile_fields(
+        self, player: Player, data: dict, *, persist: bool = False
+    ) -> dict:
+        """login/update_profile dan kelgan yosh/jins va boshqa profil maydonlari."""
+        from datetime import datetime, timezone
+
+        db_fields: dict = {}
+
+        if "name" in data:
+            player.username = str(data["name"])[:30]
+            db_fields["display_name"] = player.username
+
+        if "male" in data:
+            player.male = bool(data["male"])
+            player.gender = "male" if player.male else "female"
+            db_fields["gender"] = player.gender
+
+        if "locale" in data:
+            player.locale = str(data["locale"])
+            db_fields["language_code"] = player.locale
+
+        if "status" in data:
+            player.status = str(data["status"])[:100]
+            db_fields["status_text"] = player.status
+
+        if "birthday_full" in data:
+            ts_ms = parse_birth_date_ms(str(data["birthday_full"]).strip())
+            if ts_ms:
+                player.birthday_ts = ts_ms
+                d_birth = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).date()
+                db_fields["birth_date"] = d_birth.isoformat()
+                today = datetime.now(timezone.utc).date()
+                player.age = max(
+                    0,
+                    today.year
+                    - d_birth.year
+                    - ((today.month, today.day) < (d_birth.month, d_birth.day)),
+                )
+                db_fields["age"] = player.age
+
+        if "age" in data and "birthday_full" not in data:
+            try:
+                player.age = max(0, int(data["age"]))
+                db_fields["age"] = player.age
+            except (TypeError, ValueError):
+                pass
+
+        if db_fields:
+            player.is_new = 0
+            db_fields["level"] = player.level
+
+        if persist and db_fields and player.db_id:
+            await self._db_update_user(player.db_id, **db_fields)
+
+        return db_fields
+
+    async def _sync_player_profile_from_db(self, player: Player) -> None:
+        """Login oldidan DB dagi yosh/jinsni RAM ga yuklash (ikkinchi ulanish uchun)."""
+        if not player.db_id:
+            return
+        try:
+            async with self._db() as repo:
+                u = await repo.get_user_with_wallet(int(player.db_id))
+            if not u:
+                return
+            if u.age is not None:
+                player.age = int(u.age) or 0
+            player.gender = u.gender or "male"
+            player.male = player.gender != "female"
+        except Exception as e:
+            log.debug("sync_player_profile_from_db: %s", e)
 
     # ════════════════════════════════════════════════════════════════════════
     # LOGIN
@@ -1005,12 +1400,59 @@ class GameManager:
             f"guest={'guest' in player.id}"
         )
 
+        reb = getattr(player, "_html5_ws_rebind", False)
+        if reb:
+            player._html5_ws_rebind = False
+
+        # Klient profil dialogidan keyin qayta ulanadi: login + registration + age/male
+        if data.get("registration") or (
+            player.db_id and int(data.get("age") or 0) > 0
+        ):
+            applied = await self._apply_player_profile_fields(
+                player, data, persist=True
+            )
+            if applied:
+                log.info(
+                    "PROFILE_SETUP: %s(%s) login orqali saqlandi age=%s male=%s",
+                    player.username,
+                    player.id,
+                    player.age,
+                    player.male,
+                )
+
+        await self._sync_player_profile_from_db(player)
+
+        needs_profile = bool(player.db_id) and int(getattr(player, "age", 0) or 0) <= 0
+        if needs_profile:
+            player.is_new = 1
+
         # 1–3. Login + game_enter + game_join + navbat (klient sp.start uchun game_id majburiy)
         if not getattr(player, "plain_ws", False):
             login_payload = await self._login_payload_with_friends(player, table_id, ts)
+            if needs_profile:
+                login_payload["is_new"] = 1
             await self.send_to(player, login_payload)
-        await asyncio.sleep(0.3)
-        await self._emit_game_enter_join_and_turn(player, table, ts)
+
+        if needs_profile and not getattr(player, "plain_ws", False):
+            await asyncio.sleep(0.15)
+            await self.send_to(
+                player,
+                {
+                    "type": "needs_registration",
+                    "name": player.username or "",
+                },
+            )
+            player.session_started = True
+            log.info(
+                "PROFILE_SETUP: %s(%s) — yosh/jins dialogi",
+                player.username,
+                player.id,
+            )
+            return
+
+        if not reb:
+            await asyncio.sleep(0.3)
+            await self._emit_game_enter_join_and_turn(player, table, ts)
 
         # HTML5: playerConnected chat `recent_messages` ni kutadi — bonusdan oldin yuboramiz
         if getattr(player, "plain_ws", False):
@@ -1040,10 +1482,13 @@ class GameManager:
                 extra={"day": day, "stars_added": bonus_stars},
             )
 
-            if bonus_stars > 0 and player.db_id and not getattr(
-                player, "is_admin", False
+            if (
+                bonus_stars > 0
+                and player.db_id
+                and not getattr(player, "is_admin", False)
             ):
-                player.stars += bonus_stars
+                player.gift_tokens = int(player.gift_tokens or 0) + bonus_stars
+                player.sync_token_display()
                 asyncio.create_task(
                     self._db_add_stars(player.db_id, bonus_stars, "daily_vip_bonus")
                 )
@@ -1056,11 +1501,10 @@ class GameManager:
 
             player.can_claim_bonus = False
 
-        # 5. Navbat/Kutish holatini tekshirish
-        await asyncio.sleep(0.3)
-        await self._check_and_broadcast_turn(table)
+        # Navbat / game_turn_offer `_emit_game_enter_join_and_turn` oxirida allaqachon yuborilgan;
+        # bu yerda qayta chaqirish ikki marta ovoz + "kim aylantiradi" chalkashuviga olib kelardi.
 
-        # 6. DB da saqlangan do'stlik so'rovlari (foydalanuvchi oflayn bo'lgan vaqtda)
+        # 5. DB da saqlangan do'stlik so'rovlari (foydalanuvchi oflayn bo'lgan vaqtda)
         await self._flush_pending_friend_requests(player)
 
         self._admin_floor_wallet(player)
@@ -1163,9 +1607,11 @@ class GameManager:
                         "is_vip": room.is_vip,
                         "min_level": room.min_level,
                         "country": room.country_code,
-                        "scope": "global"
-                        if is_global_country_code(room.country_code)
-                        else "country",
+                        "scope": (
+                            "global"
+                            if is_global_country_code(room.country_code)
+                            else "country"
+                        ),
                     }
                 )
         except Exception as e:
@@ -1181,7 +1627,9 @@ class GameManager:
             )
             return
         if new_room_id == player.table_id:
-            await self.send_to(player, {"type": "ok", "room_id": new_room_id, "ts": self._ts()})
+            await self.send_to(
+                player, {"type": "ok", "room_id": new_room_id, "ts": self._ts()}
+            )
             return
 
         cc = normalize_country_code(player.country or "UZBEKISTAN")
@@ -1255,7 +1703,9 @@ class GameManager:
 
         new_player = await self.connect(ws, new_room_id, old_user_id, strict=True)
         if not new_player:
-            log.warning(f"CHANGE ROOM blocked after disconnect: {old_user_id} → {new_room_id}")
+            log.warning(
+                f"CHANGE ROOM blocked after disconnect: {old_user_id} → {new_room_id}"
+            )
             return
         ts = self._ts()
 
@@ -1275,78 +1725,86 @@ class GameManager:
         Stol almashish oynasi (PL.show): queryFriendGames → friend_games.
         Klient kutadi: friends, fellows, games_history (g4 / ep konstruktorlari).
         """
-        raw_ids = data.get("friend_ids") or []
-        friend_ids: List[int] = []
-        for x in raw_ids:
-            try:
-                friend_ids.append(int(x))
-            except (TypeError, ValueError):
-                continue
-
         friends_rows: List[dict] = []
-        seen_games: set[str] = set()
-
-        for fid in friend_ids[:100]:
-            loc = self._find_player_table(str(fid))
-            if not loc:
-                continue
-            tid, tbl, pl = loc
-            key = f"{fid}:{tid}"
-            if key in seen_games:
-                continue
-            seen_games.add(key)
-            friends_rows.append(self._friend_game_row(tid, tbl, pl))
-
         fellows_rows: List[dict] = []
-        if player.db_id:
-            try:
-                async with self._db() as repo:
-                    admirers = await repo.get_admirer_targets(player.db_id)
-                    for u in admirers:
-                        loc = self._find_player_table(str(u.id))
-                        if not loc:
-                            continue
-                        tid, tbl, pl = loc
-                        key = f"fellow:{u.id}:{tid}"
-                        if key in seen_games:
-                            continue
-                        seen_games.add(key)
-                        fellows_rows.append(self._friend_game_row(tid, tbl, pl))
-            except Exception as e:
-                log.error(f"get_friend_games fellows: {e}")
-
         history_entries: list[dict] = []
-        country = normalize_country_code(player.country or "UZBEKISTAN")
         try:
-            c_vis, g_vis = await self._visible_country_and_global_rows(country)
-            for room in c_vis[:40]:
-                tid = str(room.id)
-                live = self.tables.get(tid)
-                m, w = self._gender_counts_for_table(live)
-                bottle = live.bottle_type if live else DEFAULT_BOTTLE_TYPE
-                history_entries.append(
-                    {
-                        "game_id": tid,
-                        "bottle": bottle,
-                        "men": m,
-                        "women": w,
-                    }
+            raw_ids = data.get("friend_ids") or []
+            friend_ids: List[int] = []
+            for x in raw_ids:
+                try:
+                    friend_ids.append(int(x))
+                except (TypeError, ValueError):
+                    continue
+
+            seen_games: set[str] = set()
+
+            for fid in friend_ids[:100]:
+                loc = self._find_player_table(str(fid))
+                if not loc:
+                    continue
+                tid, tbl, pl = loc
+                key = f"{fid}:{tid}"
+                if key in seen_games:
+                    continue
+                seen_games.add(key)
+                friends_rows.append(self._friend_game_row(tid, tbl, pl))
+
+            if player.db_id:
+                try:
+                    async with self._db() as repo:
+                        admirers = await repo.get_admirer_targets(player.db_id)
+                        for u in admirers:
+                            loc = self._find_player_table(str(u.id))
+                            if not loc:
+                                continue
+                            tid, tbl, pl = loc
+                            key = f"fellow:{u.id}:{tid}"
+                            if key in seen_games:
+                                continue
+                            seen_games.add(key)
+                            fellows_rows.append(self._friend_game_row(tid, tbl, pl))
+                except Exception as e:
+                    log.error(f"get_friend_games fellows: {e}")
+
+            country = normalize_country_code(player.country or "UZBEKISTAN")
+            try:
+                c_vis, g_vis = await asyncio.wait_for(
+                    self._visible_country_and_global_rows(country),
+                    timeout=8.0,
                 )
-            for room in g_vis[:40]:
-                tid = str(room.id)
-                live = self.tables.get(tid)
-                m, w = self._gender_counts_for_table(live)
-                bottle = live.bottle_type if live else DEFAULT_BOTTLE_TYPE
-                history_entries.append(
-                    {
-                        "game_id": tid,
-                        "bottle": bottle,
-                        "men": m,
-                        "women": w,
-                    }
-                )
+                for room in c_vis[:40]:
+                    tid = str(room.id)
+                    live = self.tables.get(tid)
+                    m, w = self._gender_counts_for_table(live)
+                    bottle = live.bottle_type if live else DEFAULT_BOTTLE_TYPE
+                    history_entries.append(
+                        {
+                            "game_id": tid,
+                            "bottle": bottle,
+                            "men": m,
+                            "women": w,
+                        }
+                    )
+                for room in g_vis[:40]:
+                    tid = str(room.id)
+                    live = self.tables.get(tid)
+                    m, w = self._gender_counts_for_table(live)
+                    bottle = live.bottle_type if live else DEFAULT_BOTTLE_TYPE
+                    history_entries.append(
+                        {
+                            "game_id": tid,
+                            "bottle": bottle,
+                            "men": m,
+                            "women": w,
+                        }
+                    )
+            except asyncio.TimeoutError:
+                log.error(f"get_friend_games history timeout user={player.id}")
+            except Exception as e:
+                log.error(f"get_friend_games history: {e}")
         except Exception as e:
-            log.error(f"get_friend_games history: {e}")
+            log.exception(f"get_friend_games failed user={player.id}: {e}")
 
         ts = self._ts()
         await self.send_to(
@@ -1360,16 +1818,26 @@ class GameManager:
                 "ts": ts,
             },
         )
+        log.info(
+            "friend_games sent user=%s friends=%d fellows=%d history=%d",
+            player.id,
+            len(friends_rows),
+            len(fellows_rows),
+            len(history_entries),
+        )
 
     def _admin_floor_wallet(self, player: Player) -> None:
         if not getattr(player, "is_admin", False):
             return
         player.hearts = max(int(player.hearts or 0), ADMIN_DISPLAY_HEARTS)
         player.hearts_real = player.hearts
-        player.stars = max(int(player.stars or 0), ADMIN_DISPLAY_STARS)
         player.gift_tokens = max(
             int(getattr(player, "gift_tokens", 0) or 0), ADMIN_DISPLAY_STARS
         )
+        player.stars_coin = max(
+            int(getattr(player, "stars_coin", 0) or 0), ADMIN_DISPLAY_STARS
+        )
+        player.sync_token_display()
 
     # ════════════════════════════════════════════════════════════════════════
     # WALLET — yangi qo'shilgan
@@ -1382,8 +1850,11 @@ class GameManager:
                 async with self._db() as repo:
                     wallet = await repo.get_wallet(player.db_id)
                     if wallet:
-                        player.hearts = wallet.hearts
-                        player.stars = wallet.stars
+                        player.apply_wallet_balances(
+                            hearts=int(wallet.hearts or 0),
+                            stars_coin=int(wallet.stars_coin or 0),
+                            gift_tokens=int(wallet.gift_tokens or 0),
+                        )
             except Exception as e:
                 log.error(f"get_wallet DB xatosi: {e}")
 
@@ -1404,6 +1875,8 @@ class GameManager:
     # GAME TURN
     # ════════════════════════════════════════════════════════════════════════
     async def _handle_game_turn(self, player: Player):
+        if await self._reject_if_dynamite(player):
+            return
         # Stolni olish
         table = self.tables.get(player.table_id)
         if not table:
@@ -1412,27 +1885,23 @@ class GameManager:
             )
             return
 
-        can = table.can_spin(player.id)
-        if not can:
-            log.warning(
-                f"SPIN: {player.username} (seat {player.seat}) cannot spin. "
-                f"state={table.state} turn_seat={table.turn_seat} bottle_seat={table.bottle_seat}"
-            )
-            # OFFER/SPINNING paytida qayta game_turn_offer yubormaslik — klient FSM buziladi
-            if table.state == STATE_WAIT:
-                await self._check_and_broadcast_turn(table)
+        # 1. Navbatni tekshirish
+        if player.seat != table.turn_seat:
+            log.warning(f"SPIN: {player.username} navbatida emas (seat {player.seat} != turn_seat {table.turn_seat})")
             return
+
+        # 2. Holatni tekshirish (Force reset if stuck)
+        if table.state != STATE_WAIT:
+            log.info(f"SPIN: Stol {table.table_id} state={table.state} edi. Majburiy WAIT ga qaytarildi.")
+            table.reset_turn()
+            table.state = STATE_WAIT
 
         table.cancel_auto_spin_task()
         table.cancel_offer_timeout_task()
         target_seat = table.start_spin(player.id)
         log.info(f"SPIN: {player.username} started spin. Target seat: {target_seat}")
 
-        # Spin yutiqlari (umumiy — qayta kirganda ham davom etadi)
         player.total_spins = int(getattr(player, "total_spins", 0) or 0) + 1
-        await self._check_achievements(player, "spins", player.total_spins)
-        if player.db_id:
-            asyncio.create_task(self._save_spin_stat(player.db_id, 1))
 
         target_p = table.get_player(table.current_target)
         if not target_p:
@@ -1440,9 +1909,38 @@ class GameManager:
             await self._check_and_broadcast_turn(table)
             return
 
-        # Prod HTML5 klientida _recv_game_spin yo'q: aylanish game_turn_offer →
-        # foydalanuvchi game_turn yuboradi → darhol game_turn (user = nishon)
-        # orqali turnSelect / toCenter animatsiyasi ishga tushadi.
+        # Joriy spin vazifasini saqlaymiz (chiqib ketganda cancel qilish uchun)
+        table._spin_task = asyncio.current_task()
+
+        # Darhol SPIN animatsiyasini hamma ko'rishi kerak
+        await self.broadcast(
+            table.table_id,
+            {
+                "type": "game_spin",
+                "uid": player.id,
+                "user_id": player.id,
+                "gameId": table.table_id,
+                "tableId": table.table_id,
+                "user": player.to_short(),
+                "target_seat": target_seat + 1,
+                "delay": 0,
+                "ts": self._ts(),
+            },
+        )
+
+        try:
+            # Klient aylanishini server kutmasin; xabarlarni ketma-ket yetkazish uchun bitta yield.
+            await asyncio.sleep(0)
+        except asyncio.CancelledError:
+            log.info(f"SPIN bekor qilindi: {player.username} chiqqan ko'rinadi (stol={table.table_id})")
+            return
+
+        # Xavfsizlik: o'yinchi hali ham stoldami va holat o'zgarmaganmi?
+        if table.state != STATE_SPINNING or table.current_spinner != player.id:
+            log.info(f"SPIN yakunlanmadi: holat o'zgargan (state={table.state})")
+            return
+
+        # TARGETga tanlov beriladi (Stage 1)
         table.offer_turn()
         await self.broadcast(
             table.table_id,
@@ -1450,26 +1948,41 @@ class GameManager:
                 "type": "game_turn",
                 "gameId": table.table_id,
                 "tableId": table.table_id,
+                "uid": target_p.id,
+                "user_id": target_p.id,
                 "user": target_p.to_short(),
                 "receiver": player.to_short(),
+                "stage": 1,
                 "ts": self._ts(),
             },
         )
 
         table.schedule_offer_timeout_task(self._turn_timeout(table, player.id))
 
+        await self._check_achievements(player, "spins", player.total_spins)
+        if player.db_id:
+            asyncio.create_task(self._save_spin_stat(player.db_id, 1))
+
     async def _turn_timeout(self, table: Table, spinner_id: str):
         await asyncio.sleep(Table.TURN_OFFER_TIMEOUT)
         if table.state == STATE_OFFER and table.current_spinner == spinner_id:
+            # Timeout: raundni yopamiz, kim bosmagan bo'lsa — hech narsa qilinmaydi.
             table.reset_turn()
             await self.broadcast(
                 table.table_id,
                 {"type": "game_wait", "user_id": spinner_id, "ts": self._ts()},
             )
-            # Navbatni keyingi odamga o'tkazamiz
             spinner = table.get_player(spinner_id)
             if spinner:
                 await self._advance_bottle(table, spinner)
+            else:
+                # Spinner stoldan ketgan — shunday ham keyingi navbatga o'tamiz
+                log.info(
+                    "TURN-TIMEOUT: spinner %s topilmadi (ketgan). Navbatni qayta tekshiramiz (stol=%s)",
+                    spinner_id,
+                    table.table_id,
+                )
+                await self._check_and_broadcast_turn(table)
 
     def _partner_for_offer_turn(
         self, table: Table, player: Player, data: dict
@@ -1536,26 +2049,30 @@ class GameManager:
         if "league_kiss2x" in sender.boosters:
             score_to_add = 2
 
-        sender.kisses += 1
-        sender.total_kisses += 1
+        # Kiss bosgan odamga emas, faqat juftiga (receiver) qo'shiladi.
         sender.league_score += score_to_add
         receiver.kisses += 1
+        receiver.total_kisses += 1
         receiver.league_score += score_to_add
         table.room_kiss_count += 1
 
-        asyncio.create_task(self._save_kiss_stats(sender.db_id, receiver.db_id))
+        # DB + reyting: faqat receiver (kiss qabul qilgan) uchun +1
+        await self._save_kiss_stats(sender_id=None, receiver_id=receiver.db_id)
 
+        ts_ls = self._ts()
+        # UI yangilanishi: receiverning umumiy kissini yangilab beramiz
         await self.broadcast(
             table.table_id,
             {
                 "type": "league_score",
-                "user": sender.to_short(),
-                "user_id": sender.id,
+                "user": receiver.to_short(),
+                "user_id": receiver.id,
                 "score": score_to_add,
                 "assign": {"kisses": 1, "league_score": score_to_add},
-                "kisses": sender.total_kisses,
+                "kisses": receiver.total_kisses,
+                "total_kiss_count": receiver.total_kisses,
                 "kisses_lim": 500,
-                "ts": self._ts(),
+                "ts": ts_ls,
             },
         )
 
@@ -1565,7 +2082,7 @@ class GameManager:
             )
 
         # Yutuq tekshiruvi (kissing yutiqlari)
-        await self._check_achievements(sender, "total_kisses", sender.total_kisses)
+        await self._check_achievements(receiver, "total_kisses", receiver.total_kisses)
 
     async def _broadcast_refuse_pair_effects(
         self, table: Table, refuser: Player, receiver: Player
@@ -1600,11 +2117,13 @@ class GameManager:
     async def _handle_select_choice(self, table: Table, player: Player, data: dict):
         """
         HTML5 klient: type select_choice, choice Kiss | NoKiss
-        BIRINCHI bosgan o'yinchining tanlovi yakuniy — sherigini kutmaymiz.
-          • Kiss bosilsa — darhol o'pish (kiss) animatsiyasi
-          • NoKiss bosilsa — darhol rad (refuse)
-        Sherigi keyin bossa, e'tibor bermaymiz (resolving flag).
+        Har bir o'yinchi alohida action qiladi.
+          • Kim "Kiss" bossa — o'sha odam kiss qilgan bo'lib ko'rinadi va juftiga kiss qo'shiladi.
+          • Kim "NoKiss" bossa — faqat refuse effekti (juftiga kiss qo'shilmaydi).
+        Raund: ikkala tomon ham action qilganda (yoki timeout) yopiladi.
         """
+        if await self._reject_if_dynamite(player):
+            return
         if table.state != STATE_OFFER or table.resolving:
             log.info(
                 "select_choice rad: state=%s resolving=%s uid=%s",
@@ -1650,15 +2169,15 @@ class GameManager:
             )
             return
 
-        # Birinchi tanlov yakuniy — keyingi presslarni bloklash uchun resolving=True
-        table.resolving = True
-        table.cancel_offer_timeout_task()
-
-        is_spinner = (player.id == spin_id)
+        is_spinner = player.id == spin_id
         if is_spinner:
             table.spinner_choice = choice
+            if table.spinner_action_done:
+                return
         else:
             table.target_choice = choice
+            if table.target_action_done:
+                return
 
         log.info(
             "select_choice[%s]: %s -> %s (table=%s)",
@@ -1695,75 +2214,60 @@ class GameManager:
             },
         )
 
-        # 2) Yakunlaymiz — bosgan o'yinchining tanlovi ikkala tomon uchun
-        await self._resolve_pair(
-            table,
-            spinner_p,
-            target_p,
-            bottle_seat_1,
-            press_choice=choice,
-            press_by_spinner=is_spinner,
-        )
-
-    async def _resolve_pair(
-        self,
-        table: Table,
-        spinner_p: Player,
-        target_p: Player,
-        bottle_seat_1: int,
-        press_choice: str,
-        press_by_spinner: bool,
-    ):
-        """
-        Yakuniy raund: birinchi press o'sha tanlovni ikkala tomon uchun ham qo'llaydi.
-          • Kiss  → JS choices_complete ikkala "Kiss" deb ko'rsatadi → kiss animation
-          • NoKiss → refuse effekti, animatsiyasiz delay
-        """
-        # choices_complete payloadida JS shartiga mos ravishda
-        # ikkala tomon ham bir xil tanlov ko'rinishi kerak — aks holda
-        # kiss animation chiqmaydi.
-        sc = press_choice
-        tc = press_choice
-
-        await self.broadcast(
-            table.table_id,
-            {
-                "type": "choices_complete",
-                "isSpinner_choice": sc,
-                "isTarget_choice": tc,
-                "spinner_seat": spinner_p.seat + 1,
-                "target_seat": target_p.seat + 1,
-                "bottle_seat": bottle_seat_1,
-                "game_active": True,
-                "delay": 3000,
-                "game_start_timeout": None,
-                "ts": self._ts(),
-            },
-        )
-        log.info(
-            "choices_complete: sc=%s tc=%s table=%s",
-            sc,
-            tc,
-            table.table_id,
-        )
-
-        if press_choice == "Kiss":
-            # Bosgan o'yinchi — kisser (sender), sherigi — receiver
-            sender = spinner_p if press_by_spinner else target_p
-            receiver = target_p if press_by_spinner else spinner_p
+        # 2) Actionni darhol bajarish (Kiss/NoKiss)
+        if choice == "Kiss":
+            # Kim bosgan bo'lsa o'sha sender; jufti receiver
+            sender = player
+            receiver = target_p if is_spinner else spinner_p
             await self._apply_kiss_reward_after_offer(table, sender, receiver)
-            advance_player = receiver
         else:
-            # NoKiss → refuser bosgan o'yinchi, receiver — sherigi
-            refuser = spinner_p if press_by_spinner else target_p
-            receiver = target_p if press_by_spinner else spinner_p
+            # Refuse: kim bosgan bo'lsa refuser
+            refuser = player
+            receiver = target_p if is_spinner else spinner_p
             await self._broadcast_refuse_pair_effects(table, refuser, receiver)
-            advance_player = receiver
 
-        table.reset_turn()
-        await asyncio.sleep(Table.POST_RESOLVE_PAUSE_SEC)
-        await self._advance_bottle(table, advance_player)
+        if is_spinner:
+            table.spinner_action_done = True
+        else:
+            table.target_action_done = True
 
+        # 3) Ikkalasi ham action qilsa — raundni yopamiz (animatsiya uchun choices_complete ham yuboramiz)
+        if table.spinner_action_done and table.target_action_done:
+            table.round_closing = True
+            table.cancel_auto_spin_task()
+            table.resolving = True
+            table.cancel_offer_timeout_task()
+            await self.broadcast(
+                table.table_id,
+                {
+                    "type": "choices_complete",
+                    "isSpinner_choice": table.spinner_choice or "",
+                    "isTarget_choice": table.target_choice or "",
+                    "spinner_seat": spinner_p.seat + 1,
+                    "target_seat": target_p.seat + 1,
+                    "bottle_seat": bottle_seat_1,
+                    "game_active": True,
+                    "delay": 3000,
+                    "game_start_timeout": None,
+                    "ts": self._ts(),
+                },
+            )
+            table.reset_turn()
+
+            # Ikkala taraf ham o'psa 5 soniya, aks holda 2 soniya kutamiz
+            pause_sec = Table.POST_RESOLVE_PAUSE_SEC
+            if table.spinner_choice == "Kiss" and table.target_choice == "Kiss":
+                pause_sec = 2.0
+
+            try:
+                await asyncio.sleep(pause_sec)
+            finally:
+                table.round_closing = False
+
+            # Blokdan yechilgandan keyin keyingi raundni boshlaymiz
+            await self._advance_bottle(table, receiver)
+
+    # `_resolve_pair` endi ishlatilmaydi: har bir bosish alohida action qiladi.
 
     # ════════════════════════════════════════════════════════════════════════
     # KISS
@@ -1771,6 +2275,8 @@ class GameManager:
     async def _handle_game_kiss(self, table: Table, player: Player, data: dict):
         """Legacy `game_kiss` paketini select_choice juftlik oqimiga yo'naltiramiz —
         shunda sherigining tanlovi kutiladi va keyingi klik bosolmay qolmaydi."""
+        if await self._reject_if_dynamite(player):
+            return
         if table.state != STATE_OFFER:
             log.debug(
                 "kiss e'tiborsiz: state=%s (kerak %s). uid=%s",
@@ -1788,11 +2294,9 @@ class GameManager:
             return
         try:
             async with self._db() as repo:
-                if sender_id:
-                    await repo.add_stat(sender_id, "kisses", 1)
-                    await repo.add_stat(sender_id, "emotion", 1)
-                # Qabul qiluvchiga ham emotion qo'shamiz
                 if receiver_id:
+                    # Kiss faqat qabul qilgan odam (receiver) uchun reytingga qo'shiladi
+                    await repo.add_stat(receiver_id, "kisses", 1)
                     await repo.add_stat(receiver_id, "emotion", 1)
         except Exception as e:
             log.error(f"Kiss stat DB xatosi: {e}")
@@ -1802,6 +2306,8 @@ class GameManager:
     # ════════════════════════════════════════════════════════════════════════
     async def _handle_game_refuse(self, table: Table, player: Player, data: dict):
         """Legacy `game_refuse` paketini ham juftlik orqali yakunlaymiz."""
+        if await self._reject_if_dynamite(player):
+            return
         if table.state != STATE_OFFER:
             log.debug(
                 "refuse e'tiborsiz: state=%s uid=%s",
@@ -1831,33 +2337,71 @@ class GameManager:
     # GIFT
     # ════════════════════════════════════════════════════════════════════════
     async def _handle_game_gift(self, table: Table, player: Player, data: dict):
-        gift_type = data.get("gift_type", "")
+        if await self._reject_if_dynamite(player):
+            return
+
+        gift_raw = data.get("gift_type", "")
+        gt_raw = str(gift_raw or "").strip().lower()
+        gt = self._normalize_item_type(gt_raw)
+
         receiver_id = str(data.get("receiver_id", ""))
-        # Narxni GIFT_PRICES dan, yo'q bo'lsa HAT_PRICES dan, default 5
-        price = int(data.get("price", GIFT_PRICES.get(gift_type, HAT_PRICES.get(gift_type, 5))))
-        receiver = table.get_player(receiver_id)
+        price = int(data.get("price", GIFT_PRICES.get(gt, HAT_PRICES.get(gt, 5))))
+        receiver = table.get_player_flexible(receiver_id)
 
         # Gift yoki Hat bo'lishi mumkin (crown1 kabi sovg'alar hat kategoriyasida)
-        valid = gift_type in GIFT_TYPES or gift_type in HAT_TYPES
+        valid = gt in GIFT_TYPES or gt in HAT_TYPES
         if not receiver or not valid:
             await self.send_to(
                 player, {"type": "error", "msg": "Noto'g'ri sovg'a", "ts": self._ts()}
             )
             return
 
+        is_love = self._is_gift_love(gt, gt_raw)
+        if is_love and not self._gift_love_unlimited(player) and self._gift_love_stock(player) < 1:
+            await self.send_to(
+                player,
+                {"type": "error", "msg": "«Коктейль Любви» tugadi.", "ts": self._ts()},
+            )
+            return
 
-        ok = await self._spend_hearts(player, price, "gift", f"gift:{gift_type}")
+        ok = await self._spend_hearts(player, price, "gift", f"gift:{gt}")
         if not ok:
             return
 
+        if is_love:
+            self._consume_gift_love(player)
+
+        if not self._is_bomb_gift(gt):
+            self._clear_dynamite(receiver)
+
         receiver.kisses += 1
+        # g_love («Коктейль Любви»): qabul qiluvchiga +1 ❤️
+        if is_love:
+            await self._give_hearts(
+                receiver,
+                1,
+                "gift_love_bonus",
+                save_to_db=True,
+                extra={"from_user_id": str(player.id), "gift_type": gt},
+                await_db=True,
+            )
+            await self._push_items_sync(player)
+            await self._push_wallet_sync(player)
+        # Air kiss sovg'asi — receiverga umumiy kiss (reyting) sifatida ham qo'shiladi.
+        # Front assetlari turlicha nomlanishi mumkin: air_kiss, air_kiss_premium, g_air_kiss1_v2, ...
+        if "air_kiss" in gt:
+            receiver.total_kisses = int(getattr(receiver, "total_kisses", 0) or 0) + 1
+            await self._save_kiss_stats(sender_id=None, receiver_id=receiver.db_id)
+            await self._check_achievements(
+                receiver, "total_kisses", int(receiver.total_kisses or 0)
+            )
         stick_random = random.randint(0, 1_000_000_000)
 
         await self.broadcast(
             table.table_id,
             {
                 "type": "game_gift",
-                "gift_type": gift_type,
+                "gift_type": gt,
                 "user": player.to_short(),
                 "receiver": receiver.to_short(),
                 "price": price,
@@ -1884,35 +2428,58 @@ class GameManager:
     # DRINK
     # ════════════════════════════════════════════════════════════════════════
     async def _handle_game_drink(self, table: Table, player: Player, data: dict):
-        drink_type = data.get("drink_type", data.get("drink", ""))
-        receiver_id = str(data.get("receiver_id", ""))
-        price = int(data.get("price", DRINK_PRICES.get(drink_type, 10)))
-        receiver = table.get_player(receiver_id)
+        if await self._reject_if_dynamite(player):
+            return
 
-        if not receiver or drink_type not in DRINK_TYPES:
+        drink_raw = str(data.get("drink_type", data.get("drink", ""))).strip()
+        dt = self._normalize_item_type(drink_raw.lower())
+        receiver_id = str(data.get("receiver_id", ""))
+        price = int(data.get("price", DRINK_PRICES.get(dt, 10)))
+        receiver = table.get_player_flexible(receiver_id)
+
+        if not receiver or dt not in DRINK_TYPES:
             await self.send_to(
                 player, {"type": "error", "msg": "Noto'g'ri ichimlik", "ts": self._ts()}
             )
             return
 
-        ok = await self._spend_hearts(player, price, "drink", f"drink:{drink_type}")
+        ok = await self._spend_hearts(player, price, "drink", f"drink:{dt}")
         if not ok:
             return
 
-        player.drink = drink_type
-        player.drink_count += 1
+        player.drink_count = int(player.drink_count or 0) + 1
+
+        if dt != DYNAMITE_DRINK_TYPE:
+            self._clear_dynamite(receiver)
 
         drink_rnd = random.randint(0, 1_000_000_000)
+        receiver.drink = dt
+        receiver.drink_random = drink_rnd
+        receiver.drink_count = int(receiver.drink_count or 0) + 1
+
+        # Faqat `DRINK_IDS_RECEIVER_HEART_PLUS_1` dagi ichimlik: qabul qiluvchiga +1 gold
+        if dt in DRINK_IDS_RECEIVER_HEART_PLUS_1:
+            await self._give_hearts(
+                receiver,
+                1,
+                "drink_cocktail_bonus",
+                save_to_db=True,
+                extra={"from_user_id": str(player.id), "drink_type": dt},
+                await_db=True,
+            )
+
         await self.broadcast(
             table.table_id,
             {
                 "type": "game_drink",
-                "drink_type": drink_type,
+                "drink_type": dt,
                 "user": player.to_short(),
                 "receiver": receiver.to_short(),
                 "price": price,
                 "drink_random": drink_rnd,
                 "random": drink_rnd,
+                "count": int(receiver.drink_count or 0),
+                "count_diff": 1,
                 "ts": self._ts(),
             },
         )
@@ -1921,10 +2488,13 @@ class GameManager:
     # HAT
     # ════════════════════════════════════════════════════════════════════════
     async def _handle_game_hat(self, table: Table, player: Player, data: dict):
+        if await self._reject_if_dynamite(player):
+            return
+
         hat_type = data.get("hat_type", "")
         receiver_id = str(data.get("receiver_id", ""))
         price = int(data.get("price", HAT_PRICES.get(hat_type, 20)))
-        receiver = table.get_player(receiver_id)
+        receiver = table.get_player_flexible(receiver_id)
 
         if not receiver or hat_type not in HAT_TYPES:
             await self.send_to(
@@ -1936,6 +2506,7 @@ class GameManager:
         if not ok:
             return
 
+        self._clear_dynamite(receiver)
         receiver.hat = hat_type
 
         hat_rnd = random.randint(0, 1_000_000_000)
@@ -1957,6 +2528,9 @@ class GameManager:
     # GESTURE
     # ════════════════════════════════════════════════════════════════════════
     async def _handle_game_gesture(self, table: Table, player: Player, data: dict):
+        if await self._reject_if_dynamite(player):
+            return
+
         gesture = data.get("gesture", "")
         price = int(data.get("price", GESTURE_PRICES.get(gesture, 5)))
 
@@ -1966,6 +2540,19 @@ class GameManager:
         ok = await self._spend_stars(player, price, "gesture", gesture)
         if not ok:
             return
+
+        # Oddiy gesture "kiss" ham reytingga tushsin (umumiy kiss).
+        # Bu bottle juftligidan mustaqil: foydalanuvchi istalgan vaqtda gesture kiss yuborishi mumkin.
+        if gesture == "kiss":
+            player.total_kisses = int(getattr(player, "total_kisses", 0) or 0) + 1
+            # DB ga yozib qo'yamiz (User.kisses / UserStats.kisses)
+            try:
+                await self._save_kiss_stats(sender_id=None, receiver_id=player.db_id)
+            except Exception:
+                pass
+            await self._check_achievements(
+                player, "total_kisses", int(player.total_kisses or 0)
+            )
 
         await self.broadcast(
             table.table_id,
@@ -1984,14 +2571,17 @@ class GameManager:
             return
         try:
             async with self._db() as repo:
-                await repo.spend_stars(db_id, amount, tx_type, description)
+                await repo.spend_stars_balance(db_id, amount, tx_type, description)
         except Exception as e:
-            log.error(f"Stars spend DB xatosi: {e}")
+            log.error(f"Stars balance spend DB xatosi: {e}")
 
     # ════════════════════════════════════════════════════════════════════════
     # BOTTLE TYPE CHANGE
     # ════════════════════════════════════════════════════════════════════════
     async def _handle_game_bottle(self, table: Table, player: Player, data: dict):
+        if await self._reject_if_dynamite(player):
+            return
+
         bottle_type = data.get("bottle_type", "standart")
         price = int(data.get("price", 10))
 
@@ -2018,8 +2608,11 @@ class GameManager:
     # RANDOM GIFT
     # ════════════════════════════════════════════════════════════════════════
     async def _handle_game_random(self, table: Table, player: Player, data: dict):
+        if await self._reject_if_dynamite(player):
+            return
+
         receiver_id = str(data.get("receiver_id", ""))
-        receiver = table.get_player(receiver_id)
+        receiver = table.get_player_flexible(receiver_id)
         if not receiver:
             return
 
@@ -2029,6 +2622,8 @@ class GameManager:
             return
 
         gift_type = random.choice(GIFT_TYPES)
+        if not self._is_bomb_gift(gift_type):
+            self._clear_dynamite(receiver)
         receiver.kisses += 1
         stick_random = random.randint(0, 1_000_000_000)
 
@@ -2050,18 +2645,110 @@ class GameManager:
     # ════════════════════════════════════════════════════════════════════════
     # CHAT
     # ════════════════════════════════════════════════════════════════════════
+    async def _game_chat_user_from_history_row(self, table: Table, row: dict) -> dict:
+        """DB chat qatoridan klient `game_chat` uchun user obyekti (rasm bilan)."""
+        from src.app.services.telegram_profile import NO_IMG, public_avatar_url
+
+        uid = str(row.get("user_id") or "").strip()
+        pl = table.get_player_flexible(uid) if uid else None
+        if pl:
+            return pl.to_short()
+
+        name = (
+            row.get("game_username")
+            or row.get("username")
+            or row.get("from_user")
+            or "User"
+        )
+        photo = NO_IMG
+        male = True
+        locale = "ru"
+
+        if uid.isdigit() and self._db_factory:
+            try:
+                async with self._db() as repo:
+                    u = await repo.get_user_with_wallet(int(uid))
+                if u:
+                    photo = public_avatar_url(u.avatar_url) or NO_IMG
+                    male = (u.gender or "").lower() != "female"
+                    from src.app.api.auth.user_payload import game_display_name
+
+                    name = game_display_name(u) or name
+                    locale = (u.language_code or "ru")[:2]
+            except Exception as e:
+                log.debug("chat history user db: %s", e)
+
+        return {
+            "id": uid,
+            "uid": uid,
+            "userId": uid,
+            "name": name,
+            "username": name,
+            "male": male,
+            "photo_url": photo,
+            "image": photo,
+            "locale": locale,
+        }
+
+    async def _send_table_chat_history(
+        self, player: Player, table: Table, ts: int
+    ) -> None:
+        """Yangi kirgan / stol almashtirgan o'yinchiga oxirgi 5 ta chat xabari."""
+        if not self._db_factory or not str(table.table_id).isdigit():
+            return
+        try:
+            async with self._db() as repo:
+                rows = await repo.get_recent_table_chat_messages(
+                    int(table.table_id), limit=5
+                )
+        except Exception as e:
+            log.debug("table chat history: %s", e)
+            return
+        if not rows:
+            return
+        messages: list[dict] = []
+        for row in rows:
+            body = str(row.get("message") or row.get("body") or "").strip()
+            if not body:
+                continue
+            ts_msg = int(row.get("timestamp") or row.get("ts") or ts)
+            user = await self._game_chat_user_from_history_row(table, row)
+            messages.append(
+                {
+                    "type": "game_chat",
+                    "body": body,
+                    "user": user,
+                    "timestamp": ts_msg,
+                    "ts": ts_msg,
+                }
+            )
+        if not messages:
+            return
+        await self.send_to(
+            player,
+            {"type": "game_chat_history", "messages": messages, "ts": ts},
+        )
+
     async def _handle_chat(self, table: Table, player: Player, data: dict):
+        if await self._reject_if_dynamite(player):
+            return
+
         body = str(data.get("body", "")).strip()[:500]
         receiver_id = str(data.get("receiver_id", ""))
-        receiver = table.get_player(receiver_id)
+        receiver = table.get_player_flexible(receiver_id)
         if not body:
             return
         if self._db_factory and str(table.table_id).isdigit():
             try:
                 async with self._db() as repo:
+                    chat_uid = (
+                        str(player.db_id)
+                        if getattr(player, "db_id", None)
+                        else player.id
+                    )
                     await repo.append_table_chat_message(
                         int(table.table_id),
-                        player.id,
+                        chat_uid,
                         player.username,
                         body,
                     )
@@ -2081,58 +2768,398 @@ class GameManager:
         )
 
     async def _handle_locked_message(self, table: Table, player: Player, data: dict):
-        if not player.vip:
+        """Gizli (locked) xabar — VIP va do'st sharti yo'q; qabul qiluvchi shu stolda bo'lishi kerak."""
+        if await self._reject_if_dynamite(player):
+            return
+
+        body = str(data.get("body", "")).strip()[:500]
+        receiver_id_raw = data.get("receiver_id", "")
+        receiver_name = str(data.get("receiver_name", "") or "").strip()
+
+        async def _err(msg: str) -> None:
             await self.send_to(
-                player, {"type": "error", "msg": "VIP kerak", "ts": self._ts()}
+                player,
+                {
+                    "type": "locked_message_error",
+                    "message": msg,
+                    "ts": self._ts(),
+                },
+            )
+
+        if not body:
+            await _err("Xabar matni bo'sh bo'lishi mumkin emas.")
+            return
+
+        sender_key = table.resolve_player_key(player.id) or str(player.id)
+        recv_key = table.resolve_player_key(receiver_id_raw)
+        if recv_key and recv_key == sender_key:
+            await _err("O'zingizga gizli xabar yubora olmaysiz.")
+            return
+
+        receiver = table.get_player_flexible(receiver_id_raw)
+        if not receiver:
+            await _err("Foydalanuvchi bu stolda topilmadi.")
+            return
+
+        ts = self._ts()
+        locked_payload = {
+            "type": "locked_message",
+            "body": body,
+            "user": player.to_short(),
+            "receiver_id": str(receiver.id),
+            "receiver_name": receiver_name or receiver.username,
+            "timestamp": ts,
+            "ts": ts,
+        }
+        await self.send_to(receiver, locked_payload)
+        # Yuboruvchi ham chatda o'z xabarini ko'radi (klient _recv_locked_message).
+        await self.send_to(player, locked_payload)
+
+    def _seat_shop_row(
+        self,
+        *,
+        item_id: str,
+        display_name: str,
+        price: int,
+        progress: Player,
+        payer: Player,
+        kiss_req: int = 0,
+        level_req: int = 0,
+        music_req: int = 0,
+        smile_req: int = 0,
+        vip_only: bool = False,
+    ) -> dict:
+        """HTML5 `seat_clicked_response` uchun bitta sovg'a/smiley qatori."""
+        ul = int(progress.level or 1)
+        uk = int(progress.total_kisses or 0)
+        um = int(progress.dj_score or 0)
+        usm = max(
+            int(getattr(progress, "compliments_lifetime", 0) or 0),
+            int(getattr(progress, "compliments_sent", 0) or 0),
+        )
+        bal = int(payer.hearts or 0)
+        vip_ok = bool(progress.vip)
+        if getattr(payer, "is_admin", False):
+            is_avail = True
+        else:
+            is_avail = True
+            if vip_only and not vip_ok:
+                is_avail = False
+            if uk < kiss_req:
+                is_avail = False
+            if ul < level_req:
+                is_avail = False
+            if um < music_req:
+                is_avail = False
+            if usm < smile_req:
+                is_avail = False
+            if int(price) > bal:
+                is_avail = False
+        return {
+            "id": item_id,
+            "name": display_name,
+            "price": int(price),
+            "kiss_count": int(kiss_req),
+            "level_count": int(level_req),
+            "music_count": int(music_req),
+            "smiley_count": int(smile_req),
+            "user_level": ul,
+            "user_music_count": um,
+            "user_smiley_count": usm,
+            "user_balance": bal,
+            "isAvailable": is_avail,
+            "is_vip": bool(vip_only),
+        }
+
+    async def _handle_seat_clicked(
+        self, table: Table, player: Player, data: dict
+    ) -> None:
+        """O'rindiq bosilganda klient `seat_clicked_response` kutadi (sovg'a/smiley ro'yxati)."""
+        ts = self._ts()
+        seat_number = int(data.get("seat_number", 0) or 0)
+        target_uid = normalize_ws_user_ref(data.get("target_user_id"))
+
+        target: Optional[Player] = None
+        if target_uid:
+            target = table.get_player(target_uid)
+        if target is None and seat_number > 0:
+            seat_idx = seat_number - 1
+            for p in table.players.values():
+                if int(p.seat) == seat_idx:
+                    target = p
+                    break
+
+        if not target:
+            await self.send_to(
+                player,
+                {
+                    "type": "seat_clicked_response",
+                    "seat_number": seat_number,
+                    "game_username": "Boş",
+                    "user_id": "",
+                    "profile_picture": "/photos/no_img.png",
+                    "gifts": [],
+                    "smiles": [],
+                    "bottles": [],
+                    "is_own_seat": False,
+                    "is_vip": False,
+                    "is_moderator": False,
+                    "total_kiss_count": 0,
+                    "total_music_count": 0,
+                    "total_smile_count": 0,
+                    "level": 0,
+                    "balance": int(player.hearts or 0),
+                    "liked_by_username": "",
+                    "like_price": 1,
+                    "level_period": 0,
+                    "ts": ts,
+                },
             )
             return
-        body = str(data.get("body", "")).strip()[:500]
-        receiver_id = str(data.get("receiver_id", ""))
-        receiver = table.get_player(receiver_id)
-        if not body or not receiver:
-            return
+
+        is_own = str(player.id) == str(target.id)
+        gift_keys = sorted(
+            set(GIFT_PRICES.keys())
+            | set(GIFT_TYPES_FREE)
+            | set(GIFT_TYPES_VIP)
+            | set(DRINK_TYPES)
+            | set(HAT_TYPES)
+        )
+        gifts: list[dict] = [
+            self._seat_shop_row(
+                item_id=g,
+                display_name=g,
+                price=int(GIFT_PRICES.get(g, 5)),
+                progress=target,
+                payer=player,
+                vip_only=(g in set(GIFT_TYPES_VIP)),
+            )
+            for g in gift_keys
+        ]
+        smiles: list[dict] = [
+            self._seat_shop_row(
+                item_id=g,
+                display_name=g,
+                price=int(GESTURE_PRICES.get(g, 5)),
+                progress=target,
+                payer=player,
+                vip_only=(g == "braggingvip"),
+            )
+            for g in GESTURE_TYPES
+        ]
+        tsm = max(
+            int(getattr(target, "compliments_lifetime", 0) or 0),
+            int(getattr(target, "compliments_sent", 0) or 0),
+        )
+
         await self.send_to(
-            receiver,
+            player,
             {
-                "type": "locked_message",
-                "body": body,
-                "user": player.to_short(),
-                "ts": self._ts(),
+                "type": "seat_clicked_response",
+                "seat_number": seat_number,
+                "game_username": target.username,
+                "user_id": str(target.id),
+                "profile_picture": target.photo_url or "/photos/no_img.png",
+                "gifts": gifts,
+                "smiles": smiles,
+                "bottles": [],
+                "is_own_seat": is_own,
+                "is_vip": bool(target.vip),
+                "is_moderator": bool(getattr(target, "is_admin", False)),
+                "total_kiss_count": int(target.total_kisses or 0),
+                "total_music_count": int(target.dj_score or 0),
+                "total_smile_count": tsm,
+                "level": int(target.level or 1),
+                "balance": int(player.hearts or 0),
+                "liked_by_username": "",
+                "like_price": int(getattr(target, "harem_price", 1) or 1),
+                "level_period": 0,
+                "ts": ts,
+            },
+        )
+
+    async def _handle_shop_clicked(self, player: Player, data: dict) -> None:
+        """Butulkalar menyusi — `shop_clicked_response`."""
+        ts = self._ts()
+        bal = int(player.hearts or 0)
+        is_adm = bool(getattr(player, "is_admin", False))
+        bottles: list[dict] = []
+        for bid in BOTTLE_TYPES:
+            price = int(BOTTLE_PRICES.get(bid, 0))
+            vip_only = bid == "vipbottle"
+            if is_adm:
+                ok = True
+            else:
+                ok = True
+                if vip_only and not player.vip:
+                    ok = False
+                if price > bal:
+                    ok = False
+            bottles.append(
+                {
+                    "id": bid,
+                    "name": bid,
+                    "price_hourly": price,
+                    "user_balance": bal,
+                    "isAvailable": ok,
+                }
+            )
+        await self.send_to(
+            player,
+            {
+                "type": "shop_clicked_response",
+                "user_id": str(data.get("user_id") or player.id),
+                "bottles": bottles,
+                "ts": ts,
             },
         )
 
     # ════════════════════════════════════════════════════════════════════════
     # MUSIC
     # ════════════════════════════════════════════════════════════════════════
+
+    def _music_payload_active(self, payload: Optional[dict]) -> bool:
+        if not payload:
+            return False
+        start = int(payload.get("start_timestamp") or 0)
+        if start <= 0:
+            return False
+        dur = int(payload.get("duration") or 0)
+        if dur <= 0:
+            return True
+        return self._ts() < start + dur * 1000
+
+    def _schedule_table_music_clear(self, table: Table, payload: dict) -> None:
+        old = table._music_clear_task
+        if old is not None and not old.done():
+            old.cancel()
+        dur = int(payload.get("duration") or 0)
+        if dur <= 0:
+            table._music_clear_task = None
+            return
+        start = int(payload.get("start_timestamp") or self._ts())
+        delay = max(0.0, (start + dur * 1000 - self._ts()) / 1000.0) + 0.5
+        tid = table.table_id
+
+        async def _clear() -> None:
+            await asyncio.sleep(delay)
+            tbl = self.tables.get(tid)
+            if tbl and tbl.current_music is payload:
+                tbl.current_music = None
+
+        table._music_clear_task = asyncio.create_task(_clear())
+
+    async def _send_table_music_sync(self, player: Player, table: Table) -> None:
+        """Yangi stolga kirganda — stolda qo'yilgan qo'shiq davom etishi uchun."""
+        payload = table.current_music
+        if not payload or not self._music_payload_active(payload):
+            if payload and not self._music_payload_active(payload):
+                table.current_music = None
+            return
+        sync = copy.deepcopy(payload)
+        sync["ts"] = self._ts()
+        await self.send_to(player, sync)
+
+    def _game_music_broadcast_payload(
+        self, table: Table, player: Player, data: dict
+    ) -> dict:
+        """
+        Klient _recv_game_music: sender.id, song_id, provider, start_timestamp.
+        Faqat `user` + `id` yuborilsa — JS xato, musiqa ijro bo‘lmaydi.
+        """
+        sender = player.to_short()
+        dj = int(getattr(player, "dj_score", 0) or 0)
+        sender["recorder_level"] = max(0, dj // 9)
+
+        song_id = str(
+            data.get("id") or data.get("song_id") or data.get("video_id") or ""
+        ).strip()
+        provider = str(data.get("provider") or "mv").strip() or "mv"
+
+        payload: dict = {
+            "type": "game_music",
+            "sender": sender,
+            "user": sender,
+            "song_id": song_id,
+            "id": song_id,
+            "artist": str(data.get("artist") or ""),
+            "title": str(data.get("title") or ""),
+            "url": str(data.get("url") or ""),
+            "duration": int(data.get("duration") or 0),
+            "icon": str(data.get("icon") or data.get("thumbnail") or ""),
+            "provider": provider,
+            "source": str(data.get("source") or ""),
+            "start_timestamp": self._ts(),
+            "ts": self._ts(),
+        }
+
+        recv_id = str(data.get("receiver_id") or "").strip()
+        if recv_id:
+            payload["receiver_id"] = recv_id
+            receiver = table.get_player_flexible(recv_id)
+            if receiver:
+                payload["receiver"] = receiver.to_short()
+
+        return payload
+
     async def _handle_game_music(self, table: Table, player: Player, data: dict):
+        if await self._reject_if_dynamite(player):
+            return
+        log.info(f"MUSIC: {player.username} requested music: {data}")
         price = int(data.get("price", 5))
         ok = await self._spend_hearts(player, price, "music")
         if not ok:
+            await self.send_to(
+                player,
+                {
+                    "type": "gold_music_revert",
+                    "gold_diff": price,
+                    "reason": "insufficient_gold",
+                    "ts": self._ts(),
+                },
+            )
             return
 
         player.dj_score += price
         asyncio.create_task(self._save_dj_stat(player.db_id, price))
 
-        await self.broadcast(
-            table.table_id,
-            {
-                "type": "game_music",
-                "artist": data.get("artist", ""),
-                "title": data.get("title", ""),
-                "url": data.get("url", ""),
-                "duration": data.get("duration", 0),
-                "id": data.get("id", ""),
-                "icon": data.get("icon", ""),
-                "provider": data.get("provider", ""),
-                "source": data.get("source", ""),
-                "user": player.to_short(),
-                "start_timestamp": self._ts(),
-                "ts": self._ts(),
-            },
-        )
+        payload = self._game_music_broadcast_payload(table, player, data)
+        table.current_music = payload
+        self._schedule_table_music_clear(table, payload)
+        await self.broadcast(table.table_id, payload)
+
+        asyncio.create_task(self._append_music_history(player, data))
 
         # Yutuq tekshiruvi (DJ score)
         await self._check_achievements(player, "dj_score", player.dj_score)
+
+    async def _append_music_history(self, player: Player, data: dict) -> None:
+        """O'yin xonasida ijro etilgan trek — history papkasiga."""
+        if not player.db_id:
+            return
+        vid = str(data.get("id") or data.get("video_id") or "").strip()
+        if not vid:
+            return
+        provider = str(data.get("provider") or "yt").strip() or "yt"
+        is_movie = str(data.get("type") or data.get("source") or "").lower() == "movie"
+        folder = "history_videos" if is_movie else "history_songs"
+        try:
+            from src.app.database.repositories.music_favorites import (
+                MusicFavoritesRepository,
+            )
+
+            async with self._db() as repo:
+                mf = MusicFavoritesRepository(repo.session)
+                await mf.mark_song(
+                    int(player.db_id),
+                    folder,
+                    provider,
+                    vid,
+                    favorite=True,
+                )
+                await repo.session.commit()
+        except Exception as e:
+            log.debug("music history append: %s", e)
 
     async def _save_dj_stat(self, db_id, amount: int):
         if not db_id:
@@ -2164,13 +3191,62 @@ class GameManager:
     # ════════════════════════════════════════════════════════════════════════
     # COMPLIMENT / COURT (UXAJIVAT)
     # ════════════════════════════════════════════════════════════════════════
-    async def _harem_purchase_fail(
-        self, player: Player, err: str = "not_enough_gold"
-    ):
+    async def _harem_purchase_fail(self, player: Player, err: str = "not_enough_gold"):
         await self.send_to(
             player,
             {"type": "harem_purchase", "error": err, "ts": self._ts()},
         )
+
+    def _schedule_harem_court_taken_notify(
+        self, displaced_db_id: int, target_db_id: int, new_owner_db_id: int
+    ) -> None:
+        """Eski uxajorga Telegram: nishon boshqa odamga o'tdi."""
+        if not displaced_db_id or displaced_db_id == new_owner_db_id:
+            return
+        from src.app.services.harem_notifications import notify_harem_court_taken
+
+        asyncio.create_task(
+            notify_harem_court_taken(
+                int(displaced_db_id),
+                int(target_db_id or 0),
+                int(new_owner_db_id),
+            )
+        )
+
+    async def _release_prior_harem_targets(
+        self, pursuer_db_id: int, new_target_db_id: int
+    ) -> None:
+        """Bir uxajor faqat bitta nishonda: yangi court dan oldin eskilarini bo'shatadi."""
+        if not pursuer_db_id:
+            return
+        keep_id = int(new_target_db_id or 0)
+        cleared_ids: list[int] = []
+        try:
+            async with self._db() as repo:
+                cleared_ids = await repo.clear_harem_owner_except(
+                    pursuer_db_id, except_user_id=keep_id
+                )
+        except Exception as e:
+            log.warning("_release_prior_harem_targets DB: %s", e)
+
+        cleared_set = set(cleared_ids)
+        for table in self.tables.values():
+            for pl in table.players.values():
+                db_id = int(pl.db_id or 0)
+                if keep_id and db_id == keep_id:
+                    continue
+                if int(pl.harem_owner_id or 0) != pursuer_db_id:
+                    continue
+                pl.harem_owner_id = 0
+                if db_id and db_id not in cleared_set:
+                    await self._db_update_user(db_id, harem_owner_id=0)
+                part = pl.to_participant()
+                part["harem_owner_id"] = 0
+                await self._attach_harem_owner_payload(part, 0)
+                await self.broadcast(
+                    table.table_id,
+                    self._make_update_user_payload(part),
+                )
 
     async def _handle_harem_purchase(self, table: Table, player: Player, data: dict):
         """
@@ -2234,10 +3310,16 @@ class GameManager:
                 except Exception as e:
                     log.debug(f"harem old_owner load: {e}")
 
-        ok = await self._spend_hearts(player, price, "harem_purchase", f"harem:{target_id}")
+        ok = await self._spend_hearts(
+            player, price, "harem_purchase", f"harem:{target_id}"
+        )
         if not ok:
             await self._harem_purchase_fail(player, "not_enough_gold")
             return
+
+        await self._release_prior_harem_targets(
+            buyer_db, int(target.db_id or 0)
+        )
 
         target.harem_owner_id = buyer_db
         target.harem_price = int(target.harem_price) + 1
@@ -2274,6 +3356,23 @@ class GameManager:
         log.info(
             f"HAREM: {player.username} → {target.username} price={price} new={target.harem_price}"
         )
+
+        if old_oid and old_oid != buyer_db:
+            self._schedule_harem_court_taken_notify(
+                old_oid, int(target.db_id or 0), buyer_db
+            )
+
+        # Don Juan (assets): qarshi jinsga uxajor — har bir muvaffaqiyatli gold-harid
+        if bool(player.male) != bool(target.male) and player.db_id:
+            try:
+                async with self._db() as repo:
+                    await repo.add_stat(int(player.db_id), "donjuan", 1)
+                    total_dj = await repo.get_stat_total_value(
+                        int(player.db_id), "donjuan"
+                    )
+                await self._check_achievements(player, "donjuan", total_dj)
+            except Exception as e:
+                log.warning("harem donjuan stat: %s", e)
 
         # Yutuq tekshiruvi — target uchun (mashhurlik o'sishi)
         await self._check_achievements(target, "harem_price", target.harem_price)
@@ -2437,9 +3536,7 @@ class GameManager:
                 if live_target:
                     live_target.harem_owner_id = 0
                 if target_db_id:
-                    await self._db_update_user(
-                        target_db_id, harem_owner_id=0
-                    )
+                    await self._db_update_user(target_db_id, harem_owner_id=0)
                 cur_owner = 0
                 log.info(
                     "LIKE/cancel: viewer=%s removed self as admirer of %s",
@@ -2458,6 +3555,11 @@ class GameManager:
             if viewer_db and cur_owner == viewer_db:
                 log.info("LIKE: viewer=%s already admirer", player.id)
             else:
+                displaced_owner = (
+                    int(cur_owner)
+                    if cur_owner and int(cur_owner) != viewer_db
+                    else 0
+                )
                 price = max(1, int(cur_price))
                 if not getattr(player, "is_admin", False) and player.hearts < price:
                     await self.send_to(
@@ -2474,6 +3576,10 @@ class GameManager:
                 )
                 if not ok:
                     return
+
+                await self._release_prior_harem_targets(
+                    viewer_db, int(target_db_id or 0)
+                )
 
                 new_owner = viewer_db
                 new_price = price + 1
@@ -2495,6 +3601,13 @@ class GameManager:
                     price,
                     new_price,
                 )
+
+                if displaced_owner:
+                    self._schedule_harem_court_taken_notify(
+                        displaced_owner,
+                        int(target_db_id or 0),
+                        viewer_db,
+                    )
 
                 # Stol uchastniklariga ham eski-uy uchun update_user yuboramiz
                 if live_target and live_target.table_id:
@@ -2618,9 +3731,8 @@ class GameManager:
         frame_name = (extra.frame if extra else "") or ""
         vip_color = getattr(extra, "vip_color", None)
         status = (extra.status if extra else "") or ""
-        user_id_out = (
-            (live_target.id if live_target else None)
-            or (str(target_db_id) if target_db_id else raw_target)
+        user_id_out = (live_target.id if live_target else None) or (
+            str(target_db_id) if target_db_id else raw_target
         )
 
         return {
@@ -2659,18 +3771,39 @@ class GameManager:
     # `counters` ro'yxati bilan mos kelishi kerak.
     # `bonus`: o'sha darajaga yetganda berib yuboriladigan gold.
     ACHIEVEMENTS: dict[str, dict] = {
-        # Ko'p o'pgan (kissing)
-        "donjuan":   {"metric": "total_kisses", "counters": [5, 25, 100, 250, 500],     "bonus": 50},
-        "captain":   {"metric": "total_kisses", "counters": [10, 20, 50, 100, 200],     "bonus": 30},
+        # Ko'p o'pgan (kissing) — faqat "Kapitan" (Don Juan emas; assets: Don Juan = uxajor)
+        "captain": {
+            "metric": "total_kisses",
+            "counters": [10, 20, 50, 100, 200],
+            "bonus": 30,
+        },
         # DJ
-        "dj":        {"metric": "dj_score",     "counters": [5, 15, 50],                "bonus": 40},
-        "recorder":  {"metric": "dj_score",     "counters": [10, 30, 100, 300, 1000, 3000, 10000], "bonus": 100},
+        "dj": {"metric": "dj_score", "counters": [5, 15, 50], "bonus": 40},
+        "recorder": {
+            "metric": "dj_score",
+            "counters": [10, 30, 100, 300, 1000, 3000, 10000],
+            "bonus": 100,
+        },
         # Iltifot (compliment) yuborish
-        "kindlysoul":{"metric": "compliments_sent", "counters": [15, 75, 300, 750, 1500], "bonus": 30},
+        "kindlysoul": {
+            "metric": "compliments_sent",
+            "counters": [15, 75, 300, 750, 1500],
+            "bonus": 30,
+        },
         # Uxajivat narxi (harem_price)
-        "celebrity": {"metric": "harem_price",  "counters": [20, 80, 250, 750, 1500],   "bonus": 50},
+        "celebrity": {
+            "metric": "harem_price",
+            "counters": [20, 80, 250, 750, 1500],
+            "bonus": 50,
+        },
         # Bottle aylantirish (newcomer milestone)
-        "newcomer":  {"metric": "spins",        "counters": [1, 5, 10, 50, 100],        "bonus": 20},
+        "newcomer": {"metric": "spins", "counters": [1, 5, 10, 50, 100], "bonus": 20},
+        # Don Juan — assets.json / RU matn: qarshi jinsga uxajor (gold) haridi; UserStats `donjuan`
+        "donjuan": {
+            "metric": "donjuan",
+            "counters": [5, 25, 100, 250, 500],
+            "bonus": 50,
+        },
     }
 
     async def _check_achievements(
@@ -2697,30 +3830,37 @@ class GameManager:
             bonus_amount = int(cfg.get("bonus", 20))
             log.info(
                 "ACHIEVEMENT unlocked: %s lvl=%d for %s (%s=%d)",
-                key, new_level, player.username, metric, total,
+                key,
+                new_level,
+                player.username,
+                metric,
+                total,
             )
-            # DB ga saqlash (best-effort)
             if player.db_id:
-                async def _persist():
-                    try:
-                        async with self._db() as repo:
-                            await repo.upsert_user_achievement(
-                                int(player.db_id), key, new_level
-                            )
-                    except Exception as e:
-                        log.debug(f"achievement persist failed: {e}")
-                asyncio.create_task(_persist())
+                try:
+                    async with self._db() as repo:
+                        await repo.upsert_user_achievement(
+                            int(player.db_id), key, new_level
+                        )
+                except Exception as e:
+                    log.error(
+                        "achievement persist failed: user=%s key=%s err=%s",
+                        player.db_id,
+                        key,
+                        e,
+                        exc_info=True,
+                    )
 
             # Klientga `achievement_bonus` (modal) va `game_achievement`
             # (chatga xabar) yuboramiz.
             payload = {
-                "type":          "achievement_bonus",
-                "ts":            self._ts(),
-                "timestamp":     self._ts(),
-                "user":          player.to_short(),
+                "type": "achievement_bonus",
+                "ts": self._ts(),
+                "timestamp": self._ts(),
+                "user": player.to_short(),
                 "achievement_id": key,
-                "level":         new_level - 1,  # klient 0-based level kutadi
-                "bonus":         bonus_amount,
+                "level": new_level - 1,  # klient 0-based level kutadi
+                "bonus": bonus_amount,
             }
             await self.send_to(player, payload)
             if player.table_id:
@@ -2729,9 +3869,7 @@ class GameManager:
                     {**payload, "type": "game_achievement"},
                 )
 
-    async def _handle_claim_achievement_bonus(
-        self, player: Player, data: dict
-    ) -> None:
+    async def _handle_claim_achievement_bonus(self, player: Player, data: dict) -> None:
         """Klient yutuq mukofotini olishni so'raydi.
 
         `claim_achievement_bonus` paketida `achievement_id`, `bonus` (gold
@@ -2744,15 +3882,24 @@ class GameManager:
         if not cfg:
             log.debug(f"claim_achievement_bonus: noma'lum id={key!r}")
             return
+        unlocked = int((player.achievements or {}).get(key, 0) or 0)
+        if unlocked < 1:
+            log.debug(
+                "claim_achievement_bonus: hali ochilmagan id=%s user=%s",
+                key,
+                player.username,
+            )
+            return
         bonus = int(cfg.get("bonus", 20))
         if shared:
             bonus *= 2  # ulashganda mukofot 2x
-        await self._give_hearts(
-            player, bonus, f"achievement:{key}", save_to_db=True
-        )
+        await self._give_hearts(player, bonus, f"achievement:{key}", save_to_db=True)
         log.info(
             "ACHIEVEMENT claim: %s id=%s bonus=%d shared=%s",
-            player.username, key, bonus, shared,
+            player.username,
+            key,
+            bonus,
+            shared,
         )
 
     async def _handle_compliment_next(self, player: Player):
@@ -2816,6 +3963,8 @@ class GameManager:
     # BOOSTER
     # ════════════════════════════════════════════════════════════════════════
     async def _handle_game_turn_booster(self, table: Table, player: Player, data: dict):
+        if await self._reject_if_dynamite(player):
+            return
         await self.broadcast(
             table.table_id,
             {
@@ -2831,59 +3980,14 @@ class GameManager:
     # PROFILE
     # ════════════════════════════════════════════════════════════════════════
     async def _handle_update_profile(self, table: Table, player: Player, data: dict):
-        from datetime import datetime, timezone
-
-        db_fields = {}
-
-        if "name" in data:
-            player.username = str(data["name"])[:30]
-            db_fields["display_name"] = player.username
-
-        if "male" in data:
-            player.male = bool(data["male"])
-            player.gender = "male" if player.male else "female"
-            db_fields["gender"] = player.gender
-
-        if "locale" in data:
-            player.locale = str(data["locale"])
-            db_fields["language_code"] = player.locale
-
-        if "status" in data:
-            player.status = str(data["status"])[:100]
-            db_fields["status_text"] = player.status
-
-        # Klient (L1.toServerBirthdayFull): "YYYY.MM.DD" — profil zodiak uchun
-        if "birthday_full" in data:
-            ts_ms = parse_birth_date_ms(str(data["birthday_full"]).strip())
-            if ts_ms:
-                player.birthday_ts = ts_ms
-                d_birth = datetime.fromtimestamp(
-                    ts_ms / 1000, tz=timezone.utc
-                ).date()
-                db_fields["birth_date"] = d_birth.isoformat()
-                today = datetime.now(timezone.utc).date()
-                player.age = max(
-                    0,
-                    today.year
-                    - d_birth.year
-                    - (
-                        (today.month, today.day) < (d_birth.month, d_birth.day)
-                    ),
-                )
-                db_fields["age"] = player.age
-
-        if "age" in data and "birthday_full" not in data:
-            try:
-                player.age = max(0, int(data["age"]))
-                db_fields["age"] = player.age
-            except (TypeError, ValueError):
-                pass
-
-        player.is_new = 0
-        db_fields["level"] = player.level
-
-        if db_fields and player.db_id:
-            asyncio.create_task(self._db_update_user(player.db_id, **db_fields))
+        db_fields = await self._apply_player_profile_fields(
+            player, data, persist=True
+        )
+        if not db_fields:
+            await self.send_to(
+                player, {"type": "update_profile", "ok": True, "ts": self._ts()}
+            )
+            return
 
         part = player.to_participant()
         await self._attach_harem_owner_payload(part, int(player.harem_owner_id or 0))
@@ -2990,7 +4094,11 @@ class GameManager:
 
                 ach = await repo.get_user_achievements(db_id)
                 payload["achievements"] = [
-                    {"achievement_id": k, "level": int(v or 0), "timestamp": 0}
+                    {
+                        "achievement_id": k,
+                        "level": achievement_level_to_client(v),
+                        "timestamp": 0,
+                    }
                     for k, v in sorted(ach.items())
                 ]
         except Exception as e:
@@ -3077,6 +4185,57 @@ class GameManager:
         except Exception as e:
             log.error(f"User update DB xatosi: {e}")
 
+    def find_player_by_db_id(self, db_id: int) -> Optional[Player]:
+        """Onlayn o'yinchini DB id bo'yicha topish (to'lovdan keyin sinxron)."""
+        if not db_id:
+            return None
+        uid = int(db_id)
+        for table in self.tables.values():
+            for p in table.players.values():
+                if getattr(p, "db_id", None) == uid:
+                    return p
+        return None
+
+    async def _send_tokens_insufficient(self, player: Player, required: int) -> None:
+        """Token yetarli emas: balance_low + tg_id bo'lsa bot orqali Stars cheki."""
+        from src.app.core.stars_support import build_stars_support_path
+
+        current = player.spendable_tokens()
+        shortfall = max(0, int(required) - current)
+        invoice_sent = False
+        if shortfall > 0 and getattr(player, "tg_id", None) and player.db_id:
+            from src.app.services.telegram_payments import send_stars_invoice_to_chat
+
+            invoice_sent = await send_stars_invoice_to_chat(
+                int(player.tg_id),
+                int(player.db_id),
+                shortfall,
+            )
+        from src.app.core.language import normalize_lang
+
+        lang = normalize_lang(
+            getattr(player, "language", None) or getattr(player, "locale", None)
+        )
+        support_path = build_stars_support_path(
+            shortfall=shortfall if shortfall > 0 else None,
+            lang=lang,
+        )
+        await self.send_to(
+            player,
+            {
+                "type": "balance_low",
+                "required": required,
+                "shortfall": shortfall,
+                "invoice_amount": shortfall if invoice_sent else 0,
+                "invoice_sent": invoice_sent,
+                "support_path": support_path,
+                "lang": lang,
+                "tokens": current,
+                "stars_coin": int(player.stars_coin or 0),
+                "ts": self._ts(),
+            },
+        )
+
     async def _push_wallet_sync(self, player: Player) -> None:
         """Klient `viewer.viewer` gold/tokens bilan sinxron (wallet_sync)."""
         wf = player.wallet_for_client()
@@ -3088,6 +4247,78 @@ class GameManager:
                 "ts": self._ts(),
             },
         )
+
+    async def _push_items_sync(self, player: Player) -> None:
+        """Klient `viewer.viewer.items` (g_love hisoblagichi va boshqalar)."""
+        await self.send_to(
+            player,
+            {
+                "type": "items_get",
+                "items": dict(player.items),
+                "ts": self._ts(),
+            },
+        )
+
+    @staticmethod
+    def _normalize_item_type(raw: str) -> str:
+        """`g_dynamite1.webp`, `/dlg100/g_love` kabi asset nomlarini canonical type ga."""
+        gt = str(raw or "").strip().lower().split("?", 1)[0].strip()
+        if "/" in gt:
+            gt = gt.rsplit("/", 1)[-1]
+        if gt.endswith(".webp"):
+            gt = gt[:-5]
+        if gt.startswith("g_dynamite") or gt.startswith("s_dynamite"):
+            return DYNAMITE_DRINK_TYPE
+        if gt in ("g_love", "love_cocktail"):
+            return GIFT_LOVE_ITEM_ID
+        return gt
+
+    @staticmethod
+    def _is_dynamite_blocked(player: Player) -> bool:
+        return str(getattr(player, "drink", "") or "").lower() == DYNAMITE_DRINK_TYPE
+
+    async def _reject_if_dynamite(self, player: Player) -> bool:
+        if not self._is_dynamite_blocked(player):
+            return False
+        await self.send_to(
+            player,
+            {"type": "block_message", "reason": "dynamite", "ts": self._ts()},
+        )
+        return True
+
+    @staticmethod
+    def _is_bomb_gift(gift_type: str) -> bool:
+        return str(gift_type or "").strip().lower() in BOMB_GIFT_TYPES
+
+    @staticmethod
+    def _clear_dynamite(player: Player) -> bool:
+        if not GameManager._is_dynamite_blocked(player):
+            return False
+        player.drink = ""
+        player.drink_random = 0
+        return True
+
+    @staticmethod
+    def _is_gift_love(gift_type: str, gift_raw: str = "") -> bool:
+        gt = str(gift_type or "").strip().lower()
+        raw = str(gift_raw or "").strip().lower()
+        return gt in (GIFT_LOVE_ITEM_ID, "love") or GIFT_LOVE_ITEM_ID in raw
+
+    def _gift_love_stock(self, player: Player) -> int:
+        return int(player.items.get(GIFT_LOVE_ITEM_ID, 0) or 0)
+
+    def _gift_love_unlimited(self, player: Player) -> bool:
+        return self._gift_love_stock(player) >= GIFT_LOVE_UNLIMITED_MIN
+
+    def _consume_gift_love(self, player: Player) -> Optional[str]:
+        """Inventardan 1 ta ayirish; >=999 cheksiz. Xato matni yoki None."""
+        stock = self._gift_love_stock(player)
+        if self._gift_love_unlimited(player):
+            return None
+        if stock < 1:
+            return "«Коктейль Любви» tugadi."
+        player.items[GIFT_LOVE_ITEM_ID] = stock - 1
+        return None
 
     # ════════════════════════════════════════════════════════════════════════
     # NAVIGATION
@@ -3371,7 +4602,9 @@ class GameManager:
             return
 
         target.kickout_ts = 0
-        next_kick = kickout_price_for_use_index(await self._kickout_effective_uses(player))
+        next_kick = kickout_price_for_use_index(
+            await self._kickout_effective_uses(player)
+        )
         await self.broadcast(
             table.table_id,
             {
@@ -3394,6 +4627,62 @@ class GameManager:
                 "ts": self._ts(),
             },
         )
+
+    async def _handle_get_favorite_songs(self, player: Player, data: dict) -> None:
+        """Klient `favorite_songs` javobini kutadi: song_ids, max_items."""
+        from src.app.database.repositories.music_favorites import (
+            MusicFavoritesRepository,
+            folder_limit,
+        )
+
+        folder = str(data.get("folder") or "fav_songs").strip()
+        provider = str(data.get("provider") or "mv").strip() or "mv"
+        song_ids: list[str] = []
+
+        if player.db_id:
+            try:
+                async with self._db() as repo:
+                    mf = MusicFavoritesRepository(repo.session)
+                    song_ids = await mf.get_song_ids(player.db_id, folder, provider)
+            except Exception as e:
+                log.warning("get_favorite_songs user=%s: %s", player.db_id, e)
+
+        await self.send_to(
+            player,
+            {
+                "type": "favorite_songs",
+                "folder": folder,
+                "provider": provider,
+                "song_ids": song_ids,
+                "max_items": folder_limit(folder),
+                "ts": self._ts(),
+            },
+        )
+
+    async def _handle_mark_song_favorite(self, player: Player, data: dict) -> None:
+        if not player.db_id:
+            return
+        from src.app.database.repositories.music_favorites import MusicFavoritesRepository
+
+        folder = str(data.get("folder") or "fav_songs").strip()
+        provider = str(data.get("provider") or "mv").strip() or "mv"
+        song_id = str(data.get("song_id") or "").strip()
+        favorite = bool(data.get("favorite"))
+        if not song_id:
+            return
+        try:
+            async with self._db() as repo:
+                mf = MusicFavoritesRepository(repo.session)
+                await mf.mark_song(
+                    player.db_id,
+                    folder,
+                    provider,
+                    song_id,
+                    favorite=favorite,
+                )
+                await repo.session.commit()
+        except Exception as e:
+            log.warning("mark_song_favorite user=%s: %s", player.db_id, e)
 
     async def _handle_get_friends(self, player: Player, data: dict):
         """Do'stlar ro'yxatini qaytaradi (Privacy hisobga olingan)."""
@@ -3467,9 +4756,7 @@ class GameManager:
         if player.db_id and target_uid and target_uid != player.db_id:
             try:
                 async with self._db() as repo:
-                    await repo.add_relation(
-                        player.db_id, target_uid, "friend_request"
-                    )
+                    await repo.add_relation(player.db_id, target_uid, "friend_request")
             except Exception as e:
                 log.error(f"friend_add DB: {e}")
 
@@ -3512,17 +4799,27 @@ class GameManager:
         target_uid = self._resolve_client_user_ref_to_db_id(target_id, player)
         if target_id and not target_uid:
             tid_log = target_id if len(target_id) <= 80 else target_id[:80] + "…"
-            log.warning("friend_request_answer: user_id DB ga map qilinmadi (%s)", tid_log)
+            log.warning(
+                "friend_request_answer: user_id DB ga map qilinmadi (%s)", tid_log
+            )
 
         if player.db_id and target_uid and player.db_id != target_uid:
             try:
                 async with self._db() as repo:
                     # (yuboruvchi → qabul qiluvchi) va teskarisi — har ikki yo'nalishdagi so'rovni tozalash
-                    await repo.remove_relation(target_uid, player.db_id, "friend_request")
-                    await repo.remove_relation(player.db_id, target_uid, "friend_request")
+                    await repo.remove_relation(
+                        target_uid, player.db_id, "friend_request"
+                    )
+                    await repo.remove_relation(
+                        player.db_id, target_uid, "friend_request"
+                    )
                     if accepted:
-                        ok_a = await repo.add_relation(player.db_id, target_uid, "friend")
-                        ok_b = await repo.add_relation(target_uid, player.db_id, "friend")
+                        ok_a = await repo.add_relation(
+                            player.db_id, target_uid, "friend"
+                        )
+                        ok_b = await repo.add_relation(
+                            target_uid, player.db_id, "friend"
+                        )
                         if not ok_a or not ok_b:
                             log.warning(
                                 f"friend rows incomplete ok_a={ok_a} ok_b={ok_b} "
@@ -3576,7 +4873,9 @@ class GameManager:
                     "ts": self._ts(),
                 },
             )
-        await self.send_to(player, {"type": "ok", "invite_sent": bool(target), "ts": self._ts()})
+        await self.send_to(
+            player, {"type": "ok", "invite_sent": bool(target), "ts": self._ts()}
+        )
 
     async def _handle_admirer_add(self, player: Player, data: dict):
         """Yashirin muxlis / «uxajor» munosabatini DB ga yozadi va onlayn bo'lsa xabar."""
@@ -3803,19 +5102,22 @@ class GameManager:
         )
 
     async def _handle_league_info(self, player: Player):
+        total_k = int(player.total_kisses or 0)
+        league_tier = league_tier_from_total_kisses(total_k)
+        state = league_state_for_total_kisses(total_k)
         await self.send_to(
             player,
             {
                 "type": "league_info",
-                "league": 1,
-                "league_state": "welcome",
+                "league": max(league_tier, 1) if state == "running" else league_tier,
+                "league_state": state,
                 "max_league": 16,
                 "finish_ms": self._ts() + 86400000,
                 "frame": "",
                 "gifts": ["heartangel", "brokenheart", "heartdevil"],
                 "gold": [4, 3, 2, 1, 1, 1, 1, 1, 1, 1],
                 "items": {},
-                "kisses": player.total_kisses,
+                "kisses": total_k,
                 "kisses_lim": 500,
                 "move_down": 0,
                 "move_up": 6,
@@ -3836,16 +5138,16 @@ class GameManager:
     # nomini saqlash zarur.
     _LEGACY_TOPS_COL_MAP = {
         "total_kisses": "kisses",
-        "dj_score":     "dj",
-        "harem_price":  "harem_price",
-        "gestures":     "emotion",
-        "price":        "expense",
+        "dj_score": "dj",
+        "harem_price": "harem_price",
+        "gestures": "emotion",
+        "price": "expense",
         # Eski (UserStats) atashlar — backward compatibility uchun
-        "kisses":     "kisses",
-        "dj":         "dj",
-        "expense":    "expense",
+        "kisses": "kisses",
+        "dj": "dj",
+        "expense": "expense",
         "importance": "importance",
-        "emotion":    "emotion",
+        "emotion": "emotion",
     }
 
     async def _handle_get_tops(self, player: Player, data: dict):
@@ -3877,7 +5179,9 @@ class GameManager:
                     col_name = self._LEGACY_TOPS_COL_MAP.get(top_type)
                     if not col_name:
                         result[top_type] = {
-                            "top": [], "self_rank": 0, "self_score": 0,
+                            "top": [],
+                            "self_rank": 0,
+                            "self_score": 0,
                             "top_reset_ms": 0,
                         }
                         continue
@@ -3885,12 +5189,12 @@ class GameManager:
                     top_items = []
                     for row in rows:
                         item = {
-                            "id":        row["id"],
-                            "male":      row["male"],
-                            "name":      row["name"],
-                            "username":  row["username"],
+                            "id": row["id"],
+                            "male": row["male"],
+                            "name": row["name"],
+                            "username": row["username"],
                             "photo_url": row["photo_url"],
-                            top_type:    row["score"],
+                            top_type: row["score"],
                         }
                         top_items.append(item)
 
@@ -3901,9 +5205,9 @@ class GameManager:
                         )
 
                     result[top_type] = {
-                        "top":          top_items,
-                        "self_rank":    self_rank,
-                        "self_score":   self_score,
+                        "top": top_items,
+                        "self_rank": self_rank,
+                        "self_score": self_score,
                         "top_reset_ms": 0,
                     }
         except Exception as e:
@@ -3924,12 +5228,23 @@ class GameManager:
         )
 
     async def _handle_translate(self, player: Player, data: dict):
+        from src.app.core.language import normalize_lang
+        from src.app.services.google_translate import translate_text
+
+        text = str(data.get("text") or "").strip()
+        req_id = data.get("req_id", 0)
+        target = normalize_lang(
+            data.get("lang")
+            or getattr(player, "language", None)
+            or (getattr(player, "locale", None) or "")[:2]
+        )
+        ttext = await translate_text(text, target_lang=target)
         await self.send_to(
             player,
             {
                 "type": "translate",
-                "req_id": data.get("req_id", 0),
-                "ttext": data.get("text", "") + " [translated]",
+                "req_id": req_id,
+                "ttext": ttext,
                 "ts": self._ts(),
             },
         )
@@ -3952,7 +5267,8 @@ class GameManager:
         if getattr(player, "is_admin", False):
             self._admin_floor_wallet(player)
         else:
-            player.stars += 10
+            player.gift_tokens = int(player.gift_tokens or 0) + 10
+            player.sync_token_display()
             if player.db_id:
                 asyncio.create_task(self._db_add_stars(player.db_id, 10, "vip_tokens"))
         wf = player.wallet_for_client()
@@ -3972,9 +5288,9 @@ class GameManager:
             return
         try:
             async with self._db() as repo:
-                await repo.add_stars(db_id, amount, tx_type)
+                await repo.add_gift_tokens(db_id, amount, tx_type)
         except Exception as e:
-            log.error(f"Stars add DB xatosi: {e}")
+            log.error(f"Gift tokens add DB xatosi: {e}")
 
     # ════════════════════════════════════════════════════════════════════════
     # SOTIB OLISH
@@ -3991,11 +5307,12 @@ class GameManager:
             player.grant_default_owned_items()
             self._admin_floor_wallet(player)
             wf = player.wallet_for_client()
+            uid = str(player.id)
             await self.send_to(
                 player,
                 {
                     "type": "update_vip",
-                    "user_id": player.id,
+                    "user_id": uid,
                     "vip": True,
                     "tokens": wf["tokens"],
                     "ts": self._ts(),
@@ -4004,9 +5321,9 @@ class GameManager:
             await self._push_wallet_sync(player)
             table = self.tables.get(player.table_id)
             if table:
-                await self._broadcast_to_table(
-                    table,
-                    {"type": "user_vip_upgraded", "uid": player.id, "ts": self._ts()},
+                await self.broadcast(
+                    table.table_id,
+                    {"type": "user_vip_upgraded", "uid": uid, "ts": self._ts()},
                 )
             return
 
@@ -4029,7 +5346,7 @@ class GameManager:
 
         try:
             async with self._db() as repo:
-                ok, new_stars = await repo.purchase_vip_with_stars(
+                ok, new_sc, new_gt = await repo.purchase_vip_with_gift_tokens(
                     player.db_id,
                     price,
                     VIP_BONUS_STARS,
@@ -4044,26 +5361,33 @@ class GameManager:
             return
 
         if not ok:
-            await self.send_to(
-                player,
-                {
-                    "type": "error",
-                    "msg": f"VIP uchun {price} STARS kerak.",
-                    "ts": self._ts(),
-                },
-            )
+            await self._send_tokens_insufficient(player, price)
             return
 
-        player.stars = new_stars
+        player.stars_coin = new_sc
+        player.gift_tokens = new_gt
+        player.sync_token_display()
         player.vip = True
         player.grant_default_owned_items()
 
+        try:
+            async with self._db() as repo:
+                fresh = await repo.get_user_with_wallet(int(player.db_id))
+                if fresh:
+                    player.vip = bool(fresh.vip_status)
+                    exp = getattr(fresh, "vip_expires_at", None)
+                    if exp is not None and exp < datetime.now():
+                        player.vip = False
+        except Exception as e:
+            log.debug("vip_purchase refresh user: %s", e)
+
         wf = player.wallet_for_client()
+        uid = str(player.id)
         await self.send_to(
             player,
             {
                 "type": "update_vip",
-                "user_id": player.id,
+                "user_id": uid,
                 "vip": True,
                 "tokens": wf["tokens"],
                 "ts": self._ts(),
@@ -4073,9 +5397,9 @@ class GameManager:
 
         table = self.tables.get(player.table_id)
         if table:
-            await self._broadcast_to_table(
-                table,
-                {"type": "user_vip_upgraded", "uid": player.id, "ts": self._ts()},
+            await self.broadcast(
+                table.table_id,
+                {"type": "user_vip_upgraded", "uid": uid, "ts": self._ts()},
             )
 
     async def _handle_item_purchase(self, player: Player, data: dict):
@@ -4136,9 +5460,7 @@ class GameManager:
     # KLIENT REQUEST — minifikatsiya qilingan JS (request/recv) bilan mos
     # ════════════════════════════════════════════════════════════════════════
 
-    async def _handle_pass_claim_level_reward(
-        self, player: Player, data: dict
-    ):
+    async def _handle_pass_claim_level_reward(self, player: Player, data: dict):
         ts = self._ts()
         level = data.get("level", 0)
         line = data.get("line", "free")
@@ -4220,7 +5542,8 @@ class GameManager:
                 },
             )
             return
-        player.stars += tokens_inc
+        player.gift_tokens = int(player.gift_tokens or 0) + tokens_inc
+        player.sync_token_display()
         if player.db_id:
             asyncio.create_task(
                 self._db_add_stars(player.db_id, tokens_inc, "gold2tokens")
@@ -4239,9 +5562,7 @@ class GameManager:
 
     async def _handle_vk_quest_bonus(self, player: Player):
         bonus = 30
-        await self._give_hearts(
-            player, bonus, "vk_quest_bonus", save_to_db=True
-        )
+        await self._give_hearts(player, bonus, "vk_quest_bonus", save_to_db=True)
 
     async def _handle_get_uninvited_friends(self, player: Player):
         await self.send_to(
@@ -4287,6 +5608,8 @@ class GameManager:
             return False
 
         player.hearts -= amount
+        if not getattr(player, "is_admin", False):
+            player.hearts_real = int(player.hearts or 0)
 
         if player.db_id:
             asyncio.create_task(
@@ -4302,19 +5625,11 @@ class GameManager:
             return True
         if getattr(player, "is_admin", False):
             return True
-        if player.stars < amount:
-            wf = player.wallet_for_client()
-            await self.send_to(
-                player,
-                {
-                    "type": "error",
-                    "msg": "Token yetarli emas",
-                    "tokens": wf["tokens"],
-                    "ts": self._ts(),
-                },
-            )
+        if player.spendable_tokens() < amount:
+            await self._send_tokens_insufficient(player, amount)
             return False
-        player.stars -= amount
+        player.stars_coin = int(player.stars_coin or 0) - amount
+        player.sync_token_display()
         if player.db_id:
             asyncio.create_task(
                 self._db_spend_stars(player.db_id, amount, tx_type, description)
@@ -4337,11 +5652,17 @@ class GameManager:
         tx_type: str,
         save_to_db: bool = False,
         extra: dict = None,
+        *,
+        await_db: bool = False,
     ):
         player.hearts += amount
+        player.hearts_real = int(player.hearts or 0)
 
         if save_to_db and player.db_id and not getattr(player, "is_admin", False):
-            asyncio.create_task(self._db_add_hearts(player.db_id, amount, tx_type))
+            if await_db:
+                await self._db_add_hearts(player.db_id, amount, tx_type)
+            else:
+                asyncio.create_task(self._db_add_hearts(player.db_id, amount, tx_type))
 
         wf = player.wallet_for_client()
         msg = {
@@ -4353,6 +5674,7 @@ class GameManager:
         if extra:
             msg.update(extra)
         await self.send_to(player, msg)
+        await self._push_wallet_sync(player)
 
     async def _db_add_hearts(self, db_id: int, amount: int, tx_type: str):
         try:
@@ -4372,16 +5694,37 @@ class GameManager:
         """
         Stolda o'yin boshlanishi mumkinligini tekshiradi (kamida bitta o'g'il va bitta qiz).
         Agar jinslar balansi bo'lmasa, 'game_wait' yuboradi.
-        Aks holda 'game_turn_offer' yuboradi.
+        Aks holda 'game_turn_offer' yuboradi va 6 s ichida spin bo'lmasa server avtomatik spin qiladi.
         """
         if not table.players:
+            table.cancel_auto_spin_task()
             return
 
-        # 1. Jinslarni tekshirish
-        has_male = any(p.gender == "male" for p in table.players.values())
-        has_female = any(p.gender == "female" for p in table.players.values())
+        if getattr(table, "round_closing", False):
+            log.debug(
+                "TABLE %s: _check_and_broadcast_turn — round_closing, skip",
+                table.table_id,
+            )
+            return
+
+        table.repair_turn_seat_if_orphaned()
+
+        if table.state != STATE_WAIT:
+            log.debug(
+                "TABLE %s: _check_and_broadcast_turn — state is %s, skip joining reset",
+                table.table_id,
+                table.state,
+            )
+            return
+
+        # 1. Jinslarni tekshirish (gender qatori DB da noto'g'ri bo'lishi mumkin — male boolean asosiy)
+        has_male = any(bool(getattr(p, "male", True)) for p in table.players.values())
+        has_female = any(
+            not bool(getattr(p, "male", True)) for p in table.players.values()
+        )
 
         if not has_female or not has_male:
+            table.cancel_auto_spin_task()
             # Kutish holati: frontend 'Qizlarni kutamiz' yoki 'Yigitlarni kutamiz' deb ko'rsatishi uchun
             await self.broadcast(
                 table.table_id, {"type": "game_wait", "ts": self._ts()}
@@ -4416,19 +5759,87 @@ class GameManager:
         await self._broadcast_html5_turn_state(table)
         log.info(f"TABLE {table.table_id}: Turn offered to {spinner.username}")
 
-        # 3. Avtomatik aylantirish (oldingi taymerni bekor qilib, yangisini qo'yamiz)
-        table.schedule_auto_spin_task(self._auto_spin_timeout_task(table, spinner.id))
+        # 6 s ichida navbat egasi spin qilmasa — server o'sha o'yinchi nomidan avtomatik spin qiladi
+        ts_seat = int(spinner.seat)
+        log.info(
+            "TABLE %s: Auto-spin taymer (6s) boshlandi (seat=%s, user=%s, state=%s)",
+            table.table_id,
+            ts_seat,
+            spinner.username,
+            table.state,
+        )
+        table.schedule_auto_spin_task_if_idle_turn_changed(
+            lambda: self._auto_spin_timeout_task(table, ts_seat), ts_seat
+        )
 
-    async def _auto_spin_timeout_task(self, table: Table, spinner_id: str):
-        """Kutadi; aylantirish bo'lmasa server bajaradi (qo'lda bosish uchun vaqt)."""
+    async def _auto_spin_timeout_task(self, table: Table, expected_turn_seat: int):
+        """AUTO_SPIN_IDLE_SEC kutadi; shu vaqt ichida bottle spin bo'lmasa — server navbat egasi o'rnida spin qiladi."""
         try:
-            await asyncio.sleep(45)
+            await asyncio.sleep(Table.AUTO_SPIN_IDLE_SEC)
         except asyncio.CancelledError:
             return
-        player = table.get_player(spinner_id)
-        if player and table.state == STATE_WAIT and table.turn_seat == player.seat:
-            log.info(f"AUTO-SPIN: {player.username} did not spin. Server doing it.")
+        table.repair_turn_seat_if_orphaned()
+        if getattr(table, "round_closing", False):
+            log.debug(
+                "AUTO-SPIN: round_closing (stol=%s), skip",
+                table.table_id,
+            )
+            return
+        if table.turn_seat != expected_turn_seat:
+            log.info(
+                "AUTO-SPIN bekor: navbat o'zgardi (kutilgan=%s, hozir=%s, stol=%s) — qayta tekshiramiz",
+                expected_turn_seat,
+                table.turn_seat,
+                table.table_id,
+            )
+            await self._check_and_broadcast_turn(table)
+            return
+        player = next(
+            (p for p in table.players.values() if p.seat == table.turn_seat), None
+        )
+        if not player:
+            log.warning(
+                "AUTO-SPIN: turn_seat=%s uchun o'yinchi topilmadi (stol=%s)",
+                table.turn_seat,
+                table.table_id,
+            )
+            await self._check_and_broadcast_turn(table)
+            return
+        if table.state != STATE_WAIT:
+            log.info(
+                "AUTO-SPIN bekor: state=%s (STATE_WAIT kerak), stol=%s",
+                table.state,
+                table.table_id,
+            )
+            return
+        if not table.can_spin(player.id):
+            log.info(
+                "AUTO-SPIN: can_spin=false (stol=%s uid=%s seat=%s turn_seat=%s state=%s) — navbatni qayta tekshiramiz",
+                table.table_id,
+                player.id,
+                player.seat,
+                table.turn_seat,
+                table.state,
+            )
+            # can_spin false bo'lsa ham navbatni qayta tekshiramiz — zanjir uzilmasin
+            await self._check_and_broadcast_turn(table)
+            return
+        log.info(
+            "AUTO-SPIN: %s navbatda spin qilmadi — server %s o'rnida bajaradi (stol=%s).",
+            player.username,
+            player.id,
+            table.table_id,
+        )
+        try:
             await self._handle_game_turn(player)
+        except Exception as e:
+            log.error(f"AUTO-SPIN xatosi (stol={table.table_id}): {e}", exc_info=True)
+            # Xatolik bo'lsa ham keyingi navbatga o'tishga harakat qilamiz
+            try:
+                table.reset_turn()
+                await self._advance_bottle(table, player)
+            except Exception:
+                pass
 
     async def _save_relation(self, user_id: int, target_id: int, rel_type: str):
         try:
@@ -4461,6 +5872,73 @@ class GameManager:
                     )
                     log.info(f"RABBIT: Sent to table {table_id}")
 
+    async def _handle_tg_purchase(self, player: Player, data: dict) -> None:
+        """Mini App / sayt: Telegram Stars invoice havolasi (openInvoice)."""
+        from src.app.services.telegram_payments import (
+            create_stars_invoice_link,
+            parse_tg_hearts_product_id,
+        )
+
+        product_id = str(data.get("product_id") or "")
+        parsed = parse_tg_hearts_product_id(product_id)
+        if not parsed:
+            await self.send_to(
+                player,
+                {
+                    "type": "tg_purchase",
+                    "error": "Unknown product",
+                    "ts": self._ts(),
+                },
+            )
+            return
+
+        if not player.db_id:
+            await self.send_to(
+                player,
+                {
+                    "type": "tg_purchase",
+                    "error": "Login required",
+                    "ts": self._ts(),
+                },
+            )
+            return
+
+        hearts, stars = parsed
+        lang = getattr(player, "language_code", None)
+        title = str(data.get("title") or "")[:32] or None
+        link = await create_stars_invoice_link(
+            int(player.db_id),
+            stars,
+            lang=lang,
+            hearts=hearts,
+            title=title,
+        )
+        if not link:
+            await self.send_to(
+                player,
+                {
+                    "type": "tg_purchase",
+                    "error": "Invoice unavailable",
+                    "ts": self._ts(),
+                },
+            )
+            return
+
+        await self.send_to(
+            player,
+            {
+                "type": "tg_purchase",
+                "link": link,
+                "ts": self._ts(),
+            },
+        )
+        log.info(
+            "tg_purchase link user=%s product=%s stars=%s hearts=%s",
+            player.db_id,
+            product_id,
+            stars,
+            hearts,
+        )
 
     async def _handle_gm_hearts_purchase(self, player: Player, data: dict):
         from src.app.api.ws.constants import HEARTS_PACKAGES
@@ -4504,11 +5982,13 @@ class GameManager:
             player.hearts_real = player.hearts
             self._admin_floor_wallet(player)
             await self._push_wallet_sync(player)
+            wf = player.wallet_for_client()
             await self.send_to(
                 player,
                 {
                     "type": "gm_hearts_purchase_success",
                     "amount": hearts_to_add,
+                    **wf,
                     "ts": self._ts(),
                 },
             )
@@ -4516,7 +5996,7 @@ class GameManager:
 
         try:
             async with self._db() as repo:
-                ok, new_stars, new_hearts = await repo.purchase_hearts_with_stars(
+                ok, new_sc, new_gt, new_hearts = await repo.purchase_hearts_with_gift_tokens(
                     player.db_id, amount_stars, hearts_to_add
                 )
         except Exception as e:
@@ -4532,23 +6012,149 @@ class GameManager:
             return
 
         if not ok:
-            await self.send_to(
-                player,
-                {"type": "error", "msg": "STARS yetarli emas", "ts": self._ts()},
-            )
+            await self._send_tokens_insufficient(player, amount_stars)
             return
 
-        player.stars = new_stars
+        player.stars_coin = new_sc
+        player.gift_tokens = new_gt
         player.hearts = new_hearts
         player.hearts_real = new_hearts
+        player.sync_token_display()
 
         await self._push_wallet_sync(player)
 
+        wf = player.wallet_for_client()
         await self.send_to(
             player,
             {
                 "type": "gm_hearts_purchase_success",
                 "amount": hearts_to_add,
+                **wf,
+                "ts": self._ts(),
+            },
+        )
+
+    async def _give_gift_tokens(
+        self,
+        player: Player,
+        amount: int,
+        tx_type: str,
+        *,
+        save_to_db: bool = True,
+    ) -> None:
+        if amount <= 0:
+            return
+        if getattr(player, "is_admin", False):
+            self._admin_floor_wallet(player)
+            await self._push_wallet_sync(player)
+            return
+        player.gift_tokens = int(player.gift_tokens or 0) + amount
+        player.sync_token_display()
+        if save_to_db and player.db_id:
+            asyncio.create_task(self._db_add_stars(player.db_id, amount, tx_type))
+        await self._push_wallet_sync(player)
+
+    async def _handle_rabbit_gift_send(self, player: Player, data: dict) -> None:
+        from src.app.api.ws.constants import (
+            RABBIT_ACTIVE_DURATION_SEC,
+            RABBIT_GIFT_TYPES,
+            RABBIT_MIN_PLAYERS,
+            RABBIT_SEND_COST_HEARTS,
+            RABBIT_SEND_COST_TOKENS,
+        )
+
+        table = self.tables.get(player.table_id)
+        if not table:
+            return
+
+        if table.player_count() < RABBIT_MIN_PLAYERS:
+            await self.send_to(
+                player, {"type": "rabbit_min_players", "ts": self._ts()}
+            )
+            return
+
+        if table.rabbit_active and time.time() < table.rabbit_active_until:
+            await self.send_to(
+                player, {"type": "rabbit_already_active", "ts": self._ts()}
+            )
+            return
+
+        gift = str(data.get("gift") or "")
+        if gift not in RABBIT_GIFT_TYPES:
+            await self.send_to(
+                player,
+                {"type": "error", "msg": "Noto'g'ri sovg'a", "ts": self._ts()},
+            )
+            return
+
+        if gift == "rabbit_gm":
+            if not await self._spend_stars(
+                player, RABBIT_SEND_COST_TOKENS, "rabbit_gift_send"
+            ):
+                return
+        elif not await self._spend_hearts(
+            player, RABBIT_SEND_COST_HEARTS, "rabbit_gift_send"
+        ):
+            return
+
+        from_uid = normalize_ws_user_ref(player.user_id)
+        table.set_rabbit_active(gift, from_uid, RABBIT_ACTIVE_DURATION_SEC)
+        await self._push_wallet_sync(player)
+        await self.broadcast(
+            table.table_id,
+            {
+                "type": "rabbit_gift_sent",
+                "gift": gift,
+                "from_user": from_uid,
+                "ts": self._ts(),
+            },
+        )
+
+    async def _handle_rabbit_gift_caught(self, player: Player, data: dict) -> None:
+        from src.app.api.ws.constants import (
+            RABBIT_CATCH_REWARD_HEARTS,
+            RABBIT_CATCH_REWARD_TOKENS,
+        )
+
+        table = self.tables.get(player.table_id)
+        if not table or not table.rabbit_active:
+            return
+
+        gift = str(data.get("gift") or "")
+        if gift != table.rabbit_gift:
+            return
+
+        caught_id = normalize_ws_user_ref(data.get("caught_by"))
+        if not caught_id:
+            caught_id = normalize_ws_user_ref(player.user_id)
+        catcher = table.players.get(caught_id)
+        if not catcher:
+            return
+
+        from_user = table.rabbit_from_user or normalize_ws_user_ref(
+            data.get("from_user")
+        )
+        table.clear_rabbit()
+
+        if gift == "rabbit_heart":
+            await self._give_hearts(
+                catcher,
+                RABBIT_CATCH_REWARD_HEARTS,
+                "rabbit_gift_caught",
+                save_to_db=True,
+            )
+        else:
+            await self._give_gift_tokens(
+                catcher, RABBIT_CATCH_REWARD_TOKENS, "rabbit_gift_caught"
+            )
+
+        await self.broadcast(
+            table.table_id,
+            {
+                "type": "rabbit_gift_caught",
+                "gift": gift,
+                "from_user": from_user,
+                "caught_by": caught_id,
                 "ts": self._ts(),
             },
         )
@@ -4556,4 +6162,3 @@ class GameManager:
 
 # ── Singleton ────────────────────────────────────────────────────────────────
 manager = GameManager()
-

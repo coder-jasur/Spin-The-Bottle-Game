@@ -46,8 +46,10 @@ def normalize_ws_user_ref(raw) -> str:
 class Table:
     # HTML5 klient: viewerControls C.add(6, ...) + timer uzunligi 9 → 6+9=15 s
     TURN_OFFER_TIMEOUT = 15
+    # Navbat berilgach 6 s ichida spin bo'lmasa — server o'zi spin qiladi (AUTO_SPIN_IDLE_SEC)
+    AUTO_SPIN_IDLE_SEC = 6.0
     # game_kiss / game_refuse dan keyin keyingi navbat (animatsiya + tanaffus)
-    POST_RESOLVE_PAUSE_SEC = 8.0
+    POST_RESOLVE_PAUSE_SEC = 2.0
     SPIN_DURATION = 3  # (faqat ma'lumot; prod klient aylanishni o‘zi boshqaradi)
 
     def __init__(self, table_id: str):
@@ -65,6 +67,9 @@ class Table:
         self.target_choice: Optional[str] = None
         # Juftlik yakunlanmoqda — ikki o‘yinchi bir vaqtda bosishidan saqlanish
         self.resolving: bool = False
+        # Har bir tomon actionini 1 marta bajarish uchun (Kiss/NoKiss bosilganda)
+        self.spinner_action_done: bool = False
+        self.target_action_done: bool = False
         self.room_kiss_count  = 0
         self.bottle_type      = (
             DEFAULT_BOTTLE_TYPE
@@ -74,16 +79,85 @@ class Table:
         self._turn_task: Optional[asyncio.Task] = None
         self._spin_task: Optional[asyncio.Task] = None
         self._auto_spin_task: Optional[asyncio.Task] = None
+        # Mavjud avto-sping vazifasi qaysi turn_seat uchun — bir xil navbatda taymerni qayta nolga tushirmaslik
+        self._auto_spin_for_seat: Optional[int] = None
         self._offer_timeout_task: Optional[asyncio.Task] = None
+        # Juftlik tugagach keyingi navbatgacha (POST_RESOLVE_PAUSE) — shu paytda navbat taklifini yubormaslik
+        self.round_closing: bool = False
+        # Bank dovşani — bir vaqtda bitta faol
+        self.rabbit_active: bool = False
+        self.rabbit_active_until: float = 0.0
+        self.rabbit_gift: Optional[str] = None
+        self.rabbit_from_user: Optional[str] = None
+        # Stolda hozir ijro etilayotgan trek (yangi kiruvchiga sinxronlash uchun)
+        self.current_music: Optional[dict] = None
+        self._music_clear_task: Optional[asyncio.Task] = None
+
+    def clear_rabbit(self) -> None:
+        self.rabbit_active = False
+        self.rabbit_active_until = 0.0
+        self.rabbit_gift = None
+        self.rabbit_from_user = None
+
+    def set_rabbit_active(
+        self, gift: str, from_user: str, duration_sec: float = 120.0
+    ) -> None:
+        self.rabbit_active = True
+        self.rabbit_gift = gift
+        self.rabbit_from_user = from_user
+        self.rabbit_active_until = time.time() + duration_sec
 
     def cancel_auto_spin_task(self):
-        if self._auto_spin_task and not self._auto_spin_task.done():
-            self._auto_spin_task.cancel()
-            self._auto_spin_task = None
+        """Avto-spin vazifasini bekor qiladi.
 
-    def schedule_auto_spin_task(self, coro):
+        `_handle_game_turn` avto-spin taymeri ichidan chaqirilganda joriy Task
+        `self._auto_spin_task` bilan bir xil bo'ladi — o'zini cancel qilmaslik kerak.
+        """
+        t = self._auto_spin_task
+        ct = asyncio.current_task()
+        if t is not None and not t.done() and t is not ct:
+            t.cancel()
+        self._auto_spin_task = None
+        self._auto_spin_for_seat = None
+
+    def schedule_auto_spin_task(self, coro, turn_seat: int):
+        """Avvalgi taymerni bekor qilib yangisini boshlaydi (stol tarkibi o'zgarganda ham to'g'ri ishlasin)."""
         self.cancel_auto_spin_task()
+        self._auto_spin_for_seat = int(turn_seat)
         self._auto_spin_task = asyncio.create_task(coro)
+
+    def schedule_auto_spin_task_if_idle_turn_changed(
+        self, coro_factory, turn_seat: int
+    ) -> None:
+        """
+        coro_factory: chaqirilganda asyncio coroutine qaytaradi (masalan
+        `lambda: self._auto_spin_timeout_task(table, ts_seat)`).
+
+        Xuddi shu navbat (turn_seat) uchun taymer allaqachon kutilayotgan bo'lsa —
+        factory chaqirilmaydi (koroutina chiqmaydi, RuntimeWarning bo'lmaydi).
+        `_check_and_broadcast_turn` takror chaqirilganda taymer uzilib qolmasin.
+        """
+        ts = int(turn_seat)
+        t = self._auto_spin_task
+        if (
+            t is not None
+            and not t.done()
+            and self._auto_spin_for_seat == ts
+            and self.state == STATE_WAIT
+        ):
+            return
+        self.schedule_auto_spin_task(coro_factory(), ts)
+
+    def repair_turn_seat_if_orphaned(self) -> None:
+        """turn_seat bo'sh yoki o'chib ketgan o'yinchiga ishora qilsa — eng kichik seatga tiklash."""
+        if not self.players or self.state != STATE_WAIT:
+            return
+        occ = {p.seat for p in self.players.values()}
+        if self.turn_seat in occ:
+            return
+        first = sorted(self.players.values(), key=lambda p: p.seat)[0]
+        self.turn_seat = first.seat
+        self.bottle_seat = first.seat
 
     def cancel_offer_timeout_task(self):
         if self._offer_timeout_task and not self._offer_timeout_task.done():
@@ -109,9 +183,15 @@ class Table:
 
     def remove_player(self, user_id: str):
         self.players.pop(user_id, None)
-        # Agar o'yin davomidagi ishtirokchi ketsa — reset
+        # Agar o'yin davomidagi ishtirokchi ketsa — darhol reset (Wait holatiga qaytish)
         if user_id in (self.current_spinner, self.current_target):
-            asyncio.create_task(self._cancel_turn())
+            self.reset_turn()
+            if self._turn_task and not self._turn_task.done():
+                self._turn_task.cancel()
+            if self._spin_task and not self._spin_task.done():
+                self._spin_task.cancel()
+            self.cancel_auto_spin_task()
+            self.cancel_offer_timeout_task()
 
     # ── Helpers ────────────────────────────────────────────────────────────
     def get_player(self, user_id: str) -> Optional["Player"]:
@@ -158,6 +238,7 @@ class Table:
 
     # ── Turn machine ───────────────────────────────────────────────────────
     def can_spin(self, user_id: str) -> bool:
+        """Navbat + WAIT. Jins balansi `_check_and_broadcast_turn` da (game_turn_offer)."""
         return (
             self.state == STATE_WAIT
             and user_id in self.players
@@ -173,9 +254,11 @@ class Table:
         self.current_spinner= spinner_id
         spinner = self.players[spinner_id]
 
-        # Qarama-qarshi jins vakillarini qidiramiz
-        target_gender = "female" if spinner.gender == "male" else "male"
-        opposites = [p for uid, p in self.players.items() if uid != spinner_id and p.gender == target_gender]
+        # Qarama-qarshi jins (gender qatori xato bo'lsa ham `male` ishonchli)
+        opposites = [
+            p for uid, p in self.players.items()
+            if uid != spinner_id and bool(p.male) != bool(spinner.male)
+        ]
 
         if opposites:
             # Qarama-qarshi jins bor bo'lsa, ulardan birini tanlaymiz
@@ -194,6 +277,8 @@ class Table:
         self.state = STATE_OFFER
         self.spinner_choice = None
         self.target_choice = None
+        self.spinner_action_done = False
+        self.target_action_done = False
 
     def select_turn(self) -> None:
         self.state = STATE_SELECT
@@ -205,6 +290,8 @@ class Table:
         self.spinner_choice   = None
         self.target_choice    = None
         self.resolving        = False
+        self.spinner_action_done = False
+        self.target_action_done = False
 
     async def _cancel_turn(self):
         if self._turn_task and not self._turn_task.done():

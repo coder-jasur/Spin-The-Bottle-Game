@@ -19,8 +19,8 @@ class LoginModel(BaseModel):
 
 @router.post("/api/auth/login")
 async def login(data: LoginModel, session: AsyncSession = Depends(get_db)):
-    user_repo = UserRepository(session) 
-    user = await user_repo.get_user_by_login(data.username)
+    user_repo = UserRepository(session)
+    user = await user_repo.get_user_by_login_or_id(data.username)
 
     if user and user.password == data.password:
         # Tokenlarni yaratamiz
@@ -44,20 +44,21 @@ async def login(data: LoginModel, session: AsyncSession = Depends(get_db)):
             if int(user.wallet.stars_coin or 0) < floor:
                 user.wallet.stars_coin = floor
                 dirty = True
-            if int(user.wallet.stars or 0) < floor:
-                user.wallet.stars = floor
+            if int(user.wallet.gift_tokens or 0) < floor:
+                user.wallet.gift_tokens = floor
                 dirty = True
             if dirty:
                 await session.commit()
 
-        stars = user.wallet.stars if user.wallet else 0
-        gift_tokens = user.wallet.gift_tokens if user.wallet else 0
+        gift_tokens = int(user.wallet.gift_tokens or 0) if user.wallet else 0
         gm_coin_raw = int(user.wallet.stars_coin or 0) if user.wallet else 0
+        stars = gm_coin_raw
         display_username = user.username or user.display_name or f"user_{user.id}"
 
         if is_admin:
-            stars = max(int(stars or 0), ADMIN_DISPLAY_STARS)
+            gift_tokens = max(int(gift_tokens or 0), ADMIN_DISPLAY_STARS)
             gm_coin = max(gm_coin_raw, ADMIN_DISPLAY_STARS)
+            stars = gm_coin
         else:
             gm_coin = gm_coin_raw
 
@@ -99,4 +100,7 @@ async def login(data: LoginModel, session: AsyncSession = Depends(get_db)):
 
         return response
 
-    raise HTTPException(status_code=404, detail="Login yoki parol xato!")
+    raise HTTPException(
+        status_code=404,
+        detail="Login/ID yoki parol noto'g'ri",
+    )

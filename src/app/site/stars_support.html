@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="google" content="notranslate" />
+  <title>Stars — Support</title>
+  <link rel="icon" type="image/png" href="./favicon/favicon-96x96.png" />
+  <link rel="stylesheet" href="/static/site_page.css?v=1" />
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="/static/site_i18n.js?v=3"></script>
+  <script>
+    (function () {
+      var lang = SiteI18n.resolveSiteLang();
+      SiteI18n.persistLangCookie(lang);
+      document.documentElement.lang = lang;
+    })();
+  </script>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">⭐</div>
+    <h1 data-i18n="stars.title"></h1>
+    <p data-i18n="stars.desc"></p>
+    <p id="amount-line" style="display:none;"></p>
+    <div class="stars-badge" id="stars-badge" style="display:none;"></div>
+    <p class="hint" data-i18n="stars.hint"></p>
+    <a id="btn-support" class="btn-primary" href="https://t.me/SpinTheBottleSupport" target="_blank" rel="noopener noreferrer">
+      <span>✈️</span>
+      <span id="btn-support-label"></span>
+    </a>
+    <a id="btn-back" class="btn-back" href="/welcome" data-i18n="stars.btn_back"></a>
+  </div>
+  <script>
+    (function () {
+      function renderAmount(i18n, n) {
+        var line = document.getElementById("amount-line");
+        var badge = document.getElementById("stars-badge");
+        if (!n || n <= 0) {
+          if (line) line.style.display = "none";
+          if (badge) badge.style.display = "none";
+          return;
+        }
+        if (line) {
+          line.style.display = "block";
+          line.textContent = i18n.t("stars.shortfall", { n: n });
+        }
+        if (badge) {
+          badge.style.display = "inline-block";
+          badge.textContent = i18n.t("stars.badge", { n: n });
+        }
+      }
+
+      var i18n = SiteI18n.applySiteI18n("stars");
+      var params = new URLSearchParams(location.search);
+      var stars = params.get("stars");
+      var supportUser = (params.get("user") || "SpinTheBottleSupport").replace(/^@/, "");
+      document.getElementById("btn-support").href = "https://t.me/" + supportUser;
+      document.getElementById("btn-support-label").textContent = i18n.t("stars.btn_support", { user: supportUser });
+      if (stars && parseInt(stars, 10) > 0) {
+        renderAmount(i18n, parseInt(stars, 10));
+      }
+      var back = params.get("back");
+      if (back) {
+        try { document.getElementById("btn-back").href = back; } catch (e) {}
+      }
+    })();
+  </script>
+</body>
+</html>

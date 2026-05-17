@@ -1,4 +1,8 @@
+import json
 import pathlib
+import urllib.parse
+from typing import Optional
+
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,31 +13,65 @@ router = APIRouter(tags=["Web"])
 base_dir = pathlib.Path(__file__).resolve().parents[2]
 site_dir = base_dir / "site"
 
+
+def _auth_payload_from_request(request: Request) -> Optional[dict]:
+    """JWT, legacy `["id"]` cookie, yoki `user_id` query’dagi o‘yin sessiya tokeni.
+
+    `/index` URL’dagi `user_id` (game_sessions) brauzerda cookie yo‘q yoki
+    JWT eskirganda ham ishlaydi — `/exit-game` ham shu bilan mos bo‘lishi kerak.
+    """
+    from src.app.api.game_session import game_sessions
+    from src.app.core.jwt import verify_access_token
+
+    raw_list: list[str] = []
+    q = request.query_params.get("user_id")
+    if q and str(q).strip():
+        raw_list.append(str(q).strip())
+    for ck in ("device_user_ids", "accessToken"):
+        v = request.cookies.get(ck)
+        if v and str(v).strip():
+            s = str(v).strip()
+            if s not in raw_list:
+                raw_list.append(s)
+
+    for raw in raw_list:
+        p = verify_access_token(raw)
+        if p:
+            return p
+        try:
+            decoded = urllib.parse.unquote(raw)
+            if decoded.startswith("[") and decoded.endswith("]"):
+                ids = json.loads(decoded)
+                if isinstance(ids, list) and ids:
+                    return {"id": int(ids[0])}
+        except Exception:
+            pass
+        uid_game = game_sessions.verify(raw)
+        if uid_game is not None:
+            return {"id": int(uid_game)}
+    return None
+
+
+def _exit_back_url(request: Request) -> str:
+    from src.app.api.config.server_json import public_base_url
+
+    settings = getattr(request.app.state, "settings", None)
+    return f"{public_base_url(request, settings)}/exit-game"
+
 @router.get("/banned")
 async def get_banned(request: Request):
     return FileResponse(site_dir / "banned.html")
 
+
+@router.get("/stars-support")
+async def get_stars_support():
+    """Sayt foydalanuvchilari: Stars yetmasa @SpinTheBottleSupport ga yo'naltirish."""
+    return FileResponse(site_dir / "stars_support.html")
+
 @router.get("/")
 async def get_login(request: Request, session: AsyncSession = Depends(get_db)):
-    from src.app.core.jwt import verify_access_token
+    payload = _auth_payload_from_request(request)
     token = request.cookies.get("device_user_ids")
-    payload = verify_access_token(token) if token else None
-    
-    # FALLBACK: ["user_id"] formatini tekshirish
-    if not payload and token:
-        try:
-            import urllib.parse
-            import json
-            decoded = urllib.parse.unquote(token)
-            if decoded.startswith("[") and decoded.endswith("]"):
-                ids = json.loads(decoded)
-                if isinstance(ids, list) and len(ids) > 0:
-                    try:
-                        uid = int(ids[0])
-                        payload = {"id": uid}
-                    except (ValueError, TypeError):
-                        pass
-        except: pass
     print(f">>> DEBUG: get_login token={token[:10] if token else None}, payload={payload is not None}", flush=True)
     
     if payload:
@@ -41,7 +79,7 @@ async def get_login(request: Request, session: AsyncSession = Depends(get_db)):
         user_repo = UserRepository(session)
         user = await user_repo.get_user_by_id(payload.get("id"))
         if user:
-            return RedirectResponse(url="/welcome")
+            return RedirectResponse(url="/index")
         else:
             # Agar bazada yo'q bo'lsa, barcha cookielarni tozalaymiz (Agressiv Logout)
             response = FileResponse(site_dir / "login.html")
@@ -58,44 +96,11 @@ async def get_login(request: Request, session: AsyncSession = Depends(get_db)):
 @router.get("/ios_bottle_mobile.html")
 @router.get("/bottle_mobile.html")
 async def get_index(request: Request, session: AsyncSession = Depends(get_db)):
-    from src.app.core.jwt import verify_access_token
-    import urllib.parse
-
-    # 1. Tokenni olish (Cookie yoki Parametrdan)
     user_id_param = request.query_params.get("user_id")
-    access_token_cookie = request.cookies.get("device_user_ids")
-    
-    token = access_token_cookie or user_id_param
-    
-    # 2. Tokenni tekshirish
-    payload = verify_access_token(token) if token else None
-    
-    # FALLBACK: ["user_id"] formatini tekshirish
-    if not payload and token:
-        try:
-            import json
-            decoded = urllib.parse.unquote(token)
-            if decoded.startswith("[") and decoded.endswith("]"):
-                ids = json.loads(decoded)
-                if isinstance(ids, list) and len(ids) > 0:
-                    try:
-                        uid = int(ids[0])
-                        payload = {"id": uid}
-                    except (ValueError, TypeError):
-                        pass
-        except Exception:
-            pass
-
-    if not payload and token:
-        from src.app.api.game_session import game_sessions
-
-        uid_game = game_sessions.verify(token.strip())
-        if uid_game is not None:
-            payload = {"id": uid_game}
-
+    payload = _auth_payload_from_request(request)
     if not payload:
-        print(">>> AUTH ERROR: No valid token found. Redirecting to login.", flush=True)
-        return RedirectResponse(url="/")
+        # Mini App: index.html ichida Telegram auth (tg_auto_auth.js)
+        return FileResponse(site_dir / "index.html")
 
     # Bazada bormi?
     from src.app.database.repositories.user import UserRepository
@@ -112,61 +117,20 @@ async def get_index(request: Request, session: AsyncSession = Depends(get_db)):
     # 3. Agar hamma narsa joyida bo'lsa, lekin URLda parametrlar bo'lmasa, ularni qo'shib redirect qilamiz
     # (Bu o'yin yuklanishi uchun zarur)
     if not user_id_param:
-        # ── Sessiya tokeni yaratish ────────────────────────────────────────
-        # DB dan tasdiqlangan real user asosida xavfsiz token yaratiladi.
-        # Har safar yangi token, eskisi avtomatik bekor bo'ladi (30 daqiqa).
-        from src.app.api.game_session import game_sessions
-        session_token = game_sessions.create(user.id)
-        print(f">>> GAME SESSION: user_id={user.id}, token={session_token[:12]}...", flush=True)
+        from src.app.api.game_entry import build_game_index_path
 
-        # Brauzerdagi tilni aniqlash (Cookie'dan)
-        client_lang = request.cookies.get("language", "ru")
-
-        # O'yin tushunadigan formatga o'tkazish
-        LOCALE_MAP = {
-            "uz": "uz_UZ",
-            "kz": "kz_KZ",
-            "tj": "tj_TJ",
-            "en": "en_US",
-            "az": "az_AZ",
-            "tr": "tr_TR",
-            "ru": "ru_RU"
-        }
-        game_locale = LOCALE_MAP.get(client_lang, "ru_RU")
-
-        params = {
-            "signed_request": "fb",
-            "query": "",
-            "user_id": session_token,   # ← JWT emas, xavfsiz sessiya token
-            "locale": game_locale,
-            "back": "http://localhost:8000/exit-game"
-        }
-        query_string = urllib.parse.urlencode(params)
-        return RedirectResponse(url=f"/index?{query_string}")
+        path = build_game_index_path(
+            request, user.id, language_code=getattr(user, "language_code", None)
+        )
+        print(f">>> GAME SESSION redirect: user_id={user.id} -> {path[:80]}...", flush=True)
+        return RedirectResponse(url=path)
 
     return FileResponse(site_dir / "index.html")
 
 @router.get("/welcome")
 async def get_welcome(request: Request, session: AsyncSession = Depends(get_db)):
-    from src.app.core.jwt import verify_access_token
+    payload = _auth_payload_from_request(request)
     token = request.cookies.get("device_user_ids")
-    payload = verify_access_token(token) if token else None
-    
-    # FALLBACK: ["user_id"] formatini tekshirish
-    if not payload and token:
-        try:
-            import urllib.parse
-            import json
-            decoded = urllib.parse.unquote(token)
-            if decoded.startswith("[") and decoded.endswith("]"):
-                ids = json.loads(decoded)
-                if isinstance(ids, list) and len(ids) > 0:
-                    try:
-                        uid = int(ids[0])
-                        payload = {"id": uid}
-                    except (ValueError, TypeError):
-                        pass
-        except: pass
     print(f">>> DEBUG: get_welcome payload={payload is not None}", flush=True)
     
     if not payload:
@@ -193,33 +157,34 @@ async def get_welcome(request: Request, session: AsyncSession = Depends(get_db))
             user.number_of_complaints = 0
             await session.commit()
         else:
+            from src.app.core.language import resolve_user_lang
+            from src.app.core.stars_support import build_banned_path
+
             ban_time = user.ban_expires_at.strftime("%Y-%m-%d %H:%M") if user.ban_expires_at else "umrbod"
-            import urllib.parse
-            return RedirectResponse(url=f"/banned?expires_at={urllib.parse.quote(ban_time)}")
+            lang = resolve_user_lang(
+                cookie_lang=request.cookies.get("language"),
+                db_language_code=getattr(user, "language_code", None),
+            )
+            settings = getattr(request.app.state, "settings", None)
+            support_user = (
+                getattr(settings, "telegram_support_username", None) if settings else None
+            )
+            return RedirectResponse(
+                url=build_banned_path(
+                    expires_at=ban_time, lang=lang, support_user=support_user
+                )
+            )
         
     return FileResponse(site_dir / "welcome.html")
 
 @router.get("/exit-game")
 async def exit_game(request: Request):
-    from src.app.core.jwt import verify_access_token
-    token = request.cookies.get("device_user_ids")
-    payload = verify_access_token(token) if token else None
-    
-    # FALLBACK: ["user_id"] formatini tekshirish
-    if not payload and token:
-        try:
-            import urllib.parse
-            import json
-            decoded = urllib.parse.unquote(token)
-            if decoded.startswith("[") and decoded.endswith("]"):
-                ids = json.loads(decoded)
-                if isinstance(ids, list) and len(ids) > 0:
-                    payload = {"id": ids[0]}
-        except: pass
-    
+    payload = _auth_payload_from_request(request)
+
     if not payload:
         return RedirectResponse(url="/")
-        
+
+    # O'yindan chiqish: yana /index emas — lobi (aks holda cookie bilan darhol o'yin qayta ochiladi)
     return RedirectResponse(url="/welcome")
 
 @router.get("/site.webmanifest")

@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Request, Depends, HTTPException, Body
 from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.templating import Jinja2Templates
@@ -9,7 +10,11 @@ from sqlalchemy.orm import selectinload
 from src.app.api.deps import get_db
 from src.app.core.jwt import verify_access_token
 from src.app.database.repositories.user import UserRepository
+from src.app.database.repositories.game import GameRepository
+from src.app.database.repositories.referral import ReferralRepository
 from src.app.database.models import User, AdminActionLog, BroadcastMessage, Wallet, Admins
+from src.app.database.models.stats import UserStats
+from src.app.api.ws.game_manager import manager as game_manager
 
 site_dir = Path(__file__).resolve().parents[2] / "site"
 templates = Jinja2Templates(directory=str(site_dir))
@@ -78,6 +83,9 @@ async def search_admin_user(
             
     if not user:
         return {"success": False, "message": "Foydalanuvchi topilmadi"}
+    vip_active = bool(user.vip_status) and (
+        user.vip_expires_at is None or user.vip_expires_at > datetime.now()
+    )
     return {
         "success": True,
         "user": {
@@ -87,8 +95,56 @@ async def search_admin_user(
             "is_banned": user.is_banned,
             "gender": user.gender,
             "country": user.country,
-            "avatar": user.avatar_url or "/photos/no_img.png"
+            "avatar": user.avatar_url or "/photos/no_img.png",
+            "vip": vip_active,
+            "vip_expires_at": (
+                user.vip_expires_at.isoformat() if user.vip_expires_at else None
+            ),
         }
+    }
+
+
+@router.get("/api/admin/user-metrics")
+async def admin_user_metrics(
+    user_id: int,
+    session: AsyncSession = Depends(get_db),
+    admin_id: int = Depends(get_current_admin),
+):
+    """Diagnostika: DB'dagi umumiy metrikalar (reyting uchun)."""
+    user = (
+        await session.execute(select(User).where(User.id == int(user_id)))
+    ).scalar_one_or_none()
+    if not user:
+        return JSONResponse({"success": False, "message": "User topilmadi"}, status_code=404)
+
+    rows = (
+        await session.execute(
+            select(UserStats.category, UserStats.daily_value, UserStats.monthly_value, UserStats.total_value)
+            .where(UserStats.user_id == int(user_id))
+        )
+    ).all()
+    stats = {
+        r.category: {
+            "daily": int(r.daily_value or 0),
+            "monthly": int(r.monthly_value or 0),
+            "total": int(r.total_value or 0),
+        }
+        for r in rows
+        if r and r.category
+    }
+
+    return {
+        "success": True,
+        "user_id": int(user.id),
+        "user_columns": {
+            "kisses": int(getattr(user, "kisses", 0) or 0),
+            "dj": int(getattr(user, "dj", 0) or 0),
+            "emotion": int(getattr(user, "emotion", 0) or 0),
+            "expense": int(getattr(user, "expense", 0) or 0),
+            "importance": int(getattr(user, "importance", 0) or 0),
+            "harem_price": int(getattr(user, "harem_price", 0) or 0),
+        },
+        "user_stats": stats,
     }
 
 @router.get("/api/admin/users/complaints")
@@ -115,7 +171,7 @@ async def add_balance(
     session: AsyncSession = Depends(get_db),
     admin_id: int = Depends(get_current_admin)
 ):
-    """O'yinda ko'rinadigan balans: `Wallet.stars` (token/coin), `Wallet.hearts` (gold/yurak)."""
+    """Balans: gift_tokens, stars_coin, hearts, vip (kun). `operation`: `add` | `subtract`."""
     try:
         target_id = int(data.get("user_id"))
     except (TypeError, ValueError):
@@ -129,9 +185,13 @@ async def add_balance(
     except (TypeError, ValueError):
         amount = 0
 
-    currency = (data.get("currency") or "stars").strip().lower()
-    if currency not in ("stars", "hearts"):
-        currency = "stars"
+    currency = (data.get("currency") or "gift_tokens").strip().lower()
+    if currency not in ("gift_tokens", "hearts", "stars_coin", "vip"):
+        currency = "gift_tokens"
+
+    operation = (data.get("operation") or data.get("direction") or "add").strip().lower()
+    if operation not in ("add", "subtract"):
+        operation = "add"
 
     if amount <= 0:
         return JSONResponse(
@@ -144,30 +204,140 @@ async def add_balance(
     if not user:
         return JSONResponse({"success": False, "message": "User topilmadi"}, status_code=404)
 
+    if currency == "vip":
+        now = datetime.now()
+        if operation == "add":
+            base = now
+            if user.vip_expires_at and user.vip_expires_at > now:
+                base = user.vip_expires_at
+            new_expires = base + timedelta(days=amount)
+            user.vip_status = True
+            user.is_premium = True
+            user.vip_expires_at = new_expires
+            msg = (
+                f"VIP +{amount} kun berildi. "
+                f"Tugash: {new_expires.strftime('%Y-%m-%d %H:%M')}"
+            )
+            action = "grant_vip"
+        else:
+            if not user.vip_status or not user.vip_expires_at:
+                return JSONResponse(
+                    {"success": False, "message": "Foydalanuvchida faol VIP yo'q"},
+                    status_code=400,
+                )
+            new_expires = user.vip_expires_at - timedelta(days=amount)
+            if new_expires <= now:
+                user.vip_status = False
+                user.is_premium = False
+                user.vip_expires_at = None
+                msg = f"VIP olib tashlandi (-{amount} kun, muddati tugadi)"
+            else:
+                user.vip_expires_at = new_expires
+                msg = (
+                    f"VIP -{amount} kun. "
+                    f"Qolgan muddat: {new_expires.strftime('%Y-%m-%d %H:%M')}"
+                )
+            action = "revoke_vip"
+
+        admin_log = AdminActionLog(
+            admin_id=admin_id,
+            target_user_id=target_id,
+            action=action,
+            amount=amount if operation == "add" else -amount,
+            details=f"Admin {admin_id} {operation} VIP {amount} days for user {target_id}",
+        )
+        session.add(admin_log)
+        await session.commit()
+        return {"success": True, "message": msg}
+
     if not user.wallet:
         user.wallet = Wallet(user_id=user.id)
         session.add(user.wallet)
         await session.flush()
 
-    if currency == "stars":
-        # WS o'yini `Wallet.stars`; frames/load-assets esa `gm_coin` uchun `stars_coin` beradi — ikkalasini sinxron tutamiz.
-        user.wallet.stars = int(user.wallet.stars or 0) + amount
-        user.wallet.stars_coin = int(user.wallet.stars_coin or 0) + amount
+    delta = amount if operation == "add" else -amount
+
+    if currency == "gift_tokens":
+        cur = int(user.wallet.gift_tokens or 0)
+        user.wallet.gift_tokens = max(0, cur + delta)
+    elif currency == "stars_coin":
+        cur = int(user.wallet.stars_coin or 0)
+        user.wallet.stars_coin = max(0, cur + delta)
     else:
-        user.wallet.hearts = int(user.wallet.hearts or 0) + amount
+        cur = int(user.wallet.hearts or 0)
+        user.wallet.hearts = max(0, cur + delta)
+
+    admin_log = AdminActionLog(
+        admin_id=admin_id,
+        target_user_id=target_id,
+        action=f"{operation}_{currency}",
+        amount=delta,
+        details=f"Admin {admin_id} {operation} {abs(delta)} {currency} to user {target_id} (delta={delta})",
+    )
+    session.add(admin_log)
+
+    await session.commit()
+    if currency == "gift_tokens":
+        label = "gift token"
+    elif currency == "stars_coin":
+        label = "Stars"
+    else:
+        label = "yurak (gold)"
+    if operation == "subtract":
+        return {"success": True, "message": f"-{amount} {label} ayirildi (minimum 0)"}
+    return {"success": True, "message": f"+{amount} {label} qo'shildi"}
+
+
+@router.post("/api/admin/grant-vip")
+async def grant_vip(
+    data: dict = Body(...),
+    session: AsyncSession = Depends(get_db),
+    admin_id: int = Depends(get_current_admin),
+):
+    """Admin orqali VIP obuna berish (kun bo'yicha) yoki uzaytirish."""
+    try:
+        target_id = int(data.get("user_id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"success": False, "message": "Foydalanuvchi ID noto'g'ri"}, status_code=400)
+
+    try:
+        days = int(data.get("days", 0))
+    except (TypeError, ValueError):
+        days = 0
+
+    if days <= 0:
+        return JSONResponse({"success": False, "message": "Kun soni musbat butun son bo'lishi kerak"}, status_code=400)
+
+    user_repo = UserRepository(session)
+    user = await user_repo.get_user_by_id(target_id)
+    if not user:
+        return JSONResponse({"success": False, "message": "User topilmadi"}, status_code=404)
+
+    now = datetime.now()
+    base = now
+    if user.vip_expires_at and user.vip_expires_at > now:
+        base = user.vip_expires_at
+    new_expires = base + timedelta(days=days)
+
+    user.vip_status = True
+    user.is_premium = True
+    user.vip_expires_at = new_expires
 
     log = AdminActionLog(
         admin_id=admin_id,
         target_user_id=target_id,
-        action=f"add_{currency}",
-        amount=amount,
-        details=f"Admin {admin_id} added {amount} {currency} to user {target_id}",
+        action="grant_vip",
+        amount=days,
+        details=f"Admin {admin_id} granted VIP +{days} days to user {target_id} (expires_at={new_expires.isoformat()})",
     )
     session.add(log)
 
     await session.commit()
-    label = "yulduz (token)" if currency == "stars" else "yurak (gold)"
-    return {"success": True, "message": f"+{amount} {label} qo'shildi"}
+    return {
+        "success": True,
+        "message": f"VIP +{days} kun berildi. Tugash sanasi: {new_expires.strftime('%Y-%m-%d %H:%M')}",
+        "expires_at": new_expires.isoformat(),
+    }
 
 @router.post("/api/admin/ban")
 async def ban_user_endpoint(
@@ -372,3 +542,260 @@ async def get_stats(
     user_repo = UserRepository(session)
     stats = await user_repo.get_registration_stats()
     return stats
+
+
+@router.get("/api/admin/live-dashboard")
+async def admin_live_dashboard(
+    session: AsyncSession = Depends(get_db),
+    admin_id: int = Depends(get_current_admin),
+):
+    """Onlayn o'yinchilar + Telegram Stars daromadi (real vaqt)."""
+    online = game_manager.get_online_presence_stats()
+    repo = GameRepository(session)
+    revenue = await repo.get_tg_stars_revenue_stats()
+    return {
+        "success": True,
+        "online": online,
+        "stars_revenue": revenue,
+        "ts": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+@router.get("/api/admin/stars-payments")
+async def admin_stars_payments(
+    limit: int = 50,
+    session: AsyncSession = Depends(get_db),
+    admin_id: int = Depends(get_current_admin),
+):
+    """Oxirgi Telegram Stars to'lovlari ro'yxati."""
+    repo = GameRepository(session)
+    payments = await repo.get_recent_tg_stars_payments(limit=limit)
+    revenue = await repo.get_tg_stars_revenue_stats()
+    return {
+        "success": True,
+        "payments": payments,
+        "summary": revenue,
+    }
+
+
+def _partner_display_name(partner) -> str:
+    u = partner.user
+    if not u:
+        return f"#{partner.user_id}"
+    return (u.display_name or u.username or u.login or f"user_{u.id}").strip()
+
+
+def _serialize_partner(partner, *, daily_earned: int) -> dict:
+    return {
+        "id": partner.id,
+        "user_id": partner.user_id,
+        "display_name": _partner_display_name(partner),
+        "partner_id": partner.partner_id,
+        "invited_bonus": int(partner.invited_bonus or 0),
+        "bonus_limit": int(partner.bonus_limit or 0),
+        "invited_guests": int(partner.invited_guests or 0),
+        "daily_earned": int(daily_earned),
+        "is_active": bool(partner.is_active),
+    }
+
+
+@router.post("/api/admin/db/sync-sequences")
+async def admin_sync_sequences(
+    session: AsyncSession = Depends(get_db),
+    admin_id: int = Depends(get_current_admin),
+):
+    """PostgreSQL id sequence — backup/merge dan keyin users_pkey / wallets_pkey xatosi."""
+    from src.app.database.sequence_sync import sync_all_sequences
+
+    n = await sync_all_sequences(session)
+    await session.commit()
+    return {"success": True, "message": f"Sequence yangilandi ({n} jadval)", "tables": n}
+
+
+@router.get("/api/admin/referral/settings")
+async def get_referral_settings(
+    session: AsyncSession = Depends(get_db),
+    admin_id: int = Depends(get_current_admin),
+):
+    repo = ReferralRepository(session)
+    s = await repo.get_default_settings()
+    return {
+        "success": True,
+        "settings": {
+            "bonus_hearts": int(s.bonus_hearts),
+            "bonus_limit": int(s.bonus_limit),
+        },
+    }
+
+
+@router.put("/api/admin/referral/settings")
+async def update_referral_settings(
+    data: dict = Body(...),
+    session: AsyncSession = Depends(get_db),
+    admin_id: int = Depends(get_current_admin),
+):
+    repo = ReferralRepository(session)
+    bonus = data.get("bonus_hearts")
+    limit = data.get("bonus_limit")
+    if bonus is None and limit is None:
+        return JSONResponse(
+            {"success": False, "message": "bonus_hearts yoki bonus_limit kerak"},
+            status_code=400,
+        )
+    try:
+        if bonus is not None:
+            bonus = int(bonus)
+        if limit is not None:
+            limit = int(limit)
+    except (TypeError, ValueError):
+        return JSONResponse(
+            {"success": False, "message": "Butun son kiriting"},
+            status_code=400,
+        )
+    s = await repo.update_default_settings(
+        bonus_hearts=bonus if bonus is not None else None,
+        bonus_limit=limit if limit is not None else None,
+    )
+    log = AdminActionLog(
+        admin_id=admin_id,
+        action="referral_settings_update",
+        details=f"bonus={s.bonus_hearts} limit={s.bonus_limit}",
+    )
+    session.add(log)
+    await session.commit()
+    return {
+        "success": True,
+        "message": "Sozlamalar saqlandi",
+        "settings": {
+            "bonus_hearts": int(s.bonus_hearts),
+            "bonus_limit": int(s.bonus_limit),
+        },
+    }
+
+
+@router.get("/api/admin/referral/partners")
+async def list_referral_partners(
+    session: AsyncSession = Depends(get_db),
+    admin_id: int = Depends(get_current_admin),
+):
+    repo = ReferralRepository(session)
+    partners = await repo.list_partners()
+    items = []
+    for p in partners:
+        daily = await repo.get_daily_earned(p.user_id)
+        items.append(_serialize_partner(p, daily_earned=daily))
+    return {"success": True, "partners": items}
+
+
+@router.post("/api/admin/referral/partners")
+async def create_referral_partner(
+    data: dict = Body(...),
+    session: AsyncSession = Depends(get_db),
+    admin_id: int = Depends(get_current_admin),
+):
+    user_repo = UserRepository(session)
+    ref_repo = ReferralRepository(session)
+    query = (data.get("user_query") or data.get("user_id") or "").strip()
+    if not query:
+        return JSONResponse(
+            {"success": False, "message": "Foydalanuvchi ID yoki username kerak"},
+            status_code=400,
+        )
+    user = None
+    try:
+        user = await user_repo.get_user_by_id(int(query))
+    except (TypeError, ValueError):
+        user = await user_repo.get_user_by_login_or_id(query.lstrip("@"))
+    if not user:
+        return JSONResponse(
+            {"success": False, "message": "Foydalanuvchi topilmadi"},
+            status_code=404,
+        )
+    partner_code = (data.get("partner_id") or "").strip() or None
+    try:
+        invited_bonus = int(data.get("invited_bonus", 50))
+        bonus_limit = int(data.get("bonus_limit", 10000))
+    except (TypeError, ValueError):
+        return JSONResponse(
+            {"success": False, "message": "Bonus va limit butun son bo'lishi kerak"},
+            status_code=400,
+        )
+    try:
+        partner = await ref_repo.create_partner(
+            user_id=user.id,
+            partner_id=partner_code,
+            invited_bonus=invited_bonus,
+            bonus_limit=bonus_limit,
+        )
+    except ValueError as e:
+        return JSONResponse(
+            {"success": False, "message": str(e)},
+            status_code=400,
+        )
+    log = AdminActionLog(
+        admin_id=admin_id,
+        action="partner_create",
+        details=f"user={user.id} code={partner.partner_id}",
+    )
+    session.add(log)
+    await session.commit()
+    partner = await ref_repo.get_partner_by_user_id(user.id) or partner
+    daily = await ref_repo.get_daily_earned(partner.user_id)
+    return {
+        "success": True,
+        "message": "Hamkor saqlandi",
+        "partner": _serialize_partner(partner, daily_earned=daily),
+    }
+
+
+@router.patch("/api/admin/referral/partners/{partner_pk}")
+async def patch_referral_partner(
+    partner_pk: int,
+    data: dict = Body(...),
+    session: AsyncSession = Depends(get_db),
+    admin_id: int = Depends(get_current_admin),
+):
+    ref_repo = ReferralRepository(session)
+    kwargs = {}
+    if "invited_bonus" in data:
+        try:
+            kwargs["invited_bonus"] = int(data["invited_bonus"])
+        except (TypeError, ValueError):
+            return JSONResponse(
+                {"success": False, "message": "invited_bonus butun son"},
+                status_code=400,
+            )
+    if "bonus_limit" in data:
+        try:
+            kwargs["bonus_limit"] = int(data["bonus_limit"])
+        except (TypeError, ValueError):
+            return JSONResponse(
+                {"success": False, "message": "bonus_limit butun son"},
+                status_code=400,
+            )
+    if "is_active" in data:
+        kwargs["is_active"] = bool(data["is_active"])
+    if not kwargs:
+        return JSONResponse(
+            {"success": False, "message": "Yangilash uchun maydon yo'q"},
+            status_code=400,
+        )
+    partner = await ref_repo.update_partner(partner_pk, **kwargs)
+    if not partner:
+        return JSONResponse(
+            {"success": False, "message": "Hamkor topilmadi"},
+            status_code=404,
+        )
+    await session.refresh(partner, ["user"])
+    log = AdminActionLog(
+        admin_id=admin_id,
+        action="partner_update",
+        details=f"id={partner_pk} {kwargs}",
+    )
+    session.add(log)
+    await session.commit()
+    daily = await ref_repo.get_daily_earned(partner.user_id)
+    return {
+        "success": True,
+        "partner": _serialize_partner(partner, daily_earned=daily),
+    }

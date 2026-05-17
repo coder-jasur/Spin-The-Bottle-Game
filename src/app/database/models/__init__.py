@@ -9,6 +9,11 @@ from .admin import Admins, AdminActionLog, BroadcastMessage
 from .story import Story, StoryView, StoryLike
 from .table import TableRoom
 from .table_chat import TableChatMessage
+from .music_track import MusicTrack
+from .user_music import UserMusicFolder
+from .user_music_gallery import UserMusicGalleryItem
+from .partner import Partner
+from .referral_bonus import ReferralBonusSettings, ReferralDailyEarnings
 
 __all__ = [
     "User",
@@ -27,4 +32,10 @@ __all__ = [
     "StoryLike",
     "TableRoom",
     "TableChatMessage",
+    "UserMusicFolder",
+    "MusicTrack",
+    "UserMusicGalleryItem",
+    "Partner",
+    "ReferralBonusSettings",
+    "ReferralDailyEarnings",
 ]

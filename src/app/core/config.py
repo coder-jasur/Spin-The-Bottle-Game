@@ -17,6 +17,27 @@ class Settings:
     db_password: str
     db_host: str
     db_port: int = 5432
+    # Telegram Mini App taklif havolalari (t.me/<bot>/<slug>?startapp=<referral_id>)
+    telegram_miniapp_bot: str = "SpinbottleTgBot"
+    telegram_miniapp_slug: str = "spin_bottle"
+    telegram_invite_share_text: str = (
+        "Please help me get a free airdrop up to $1 worth.\n"
+        "You just need to collect 50 kisses in this game on Telegram."
+    )
+    # Bot: webhook (bo'sh bo'lsa polling) va webhook maxfiylik tokeni
+    telegram_webhook_secret: str = ""
+    telegram_use_polling: bool = True
+    # Cloudflare tunnel / production: https://your-domain.com (menyu → /index)
+    telegram_webapp_url: str = ""
+    # Stars chekidan oldin banner (Telegram photo file_id, photo[-1])
+    telegram_stars_banner_file_id: str = ""
+    # /start welcome banner (Telegram photo file_id)
+    telegram_start_banner_file_id: str = ""
+    # Sayt foydalanuvchilari Stars sotib olish uchun (@username, @ siz)
+    telegram_support_username: str = "SpinTheBottleSupport"
+    # Har 24 soatda adminlarga DB backup (admin paneldagi kabi)
+    scheduled_backup_enabled: bool = True
+    scheduled_backup_interval_hours: float = 24.0
 
     def construct_postgresql_url(self):
         postgresql_dsn = (
@@ -41,7 +62,30 @@ def load_config() -> Settings:
         db_user=env.str("POSTGRES_USER"),
         db_password=env.str("POSTGRES_PASSWORD"),
         db_host=env.str("POSTGRES_HOST"),
-        db_port=env.int("POSTGRES_PORT")
-
-
+        db_port=env.int("POSTGRES_PORT"),
+        telegram_miniapp_bot=env.str("TELEGRAM_MINIAPP_BOT", "SpinbottleTgBot"),
+        telegram_miniapp_slug=env.str("TELEGRAM_MINIAPP_SLUG", "spin_bottle"),
+        telegram_invite_share_text=env.str(
+            "TELEGRAM_INVITE_SHARE_TEXT",
+            (
+                "Please help me get a free airdrop up to $1 worth.\n"
+                "You just need to collect 50 kisses in this game on Telegram."
+            ),
+        ),
+        telegram_webhook_secret=env.str("TELEGRAM_WEBHOOK_SECRET", ""),
+        telegram_use_polling=env.bool("TELEGRAM_USE_POLLING", True),
+        telegram_webapp_url=env.str("TELEGRAM_WEBAPP_URL", "").strip().rstrip("/"),
+        telegram_stars_banner_file_id=env.str(
+            "TELEGRAM_STARS_BANNER_FILE_ID", ""
+        ).strip(),
+        telegram_start_banner_file_id=env.str(
+            "TELEGRAM_START_BANNER_FILE_ID", ""
+        ).strip(),
+        telegram_support_username=env.str(
+            "TELEGRAM_SUPPORT_USERNAME", "SpinTheBottleSupport"
+        ).strip().lstrip("@"),
+        scheduled_backup_enabled=env.bool("SCHEDULED_BACKUP_ENABLED", True),
+        scheduled_backup_interval_hours=env.float(
+            "SCHEDULED_BACKUP_INTERVAL_HOURS", 24.0
+        ),
     )

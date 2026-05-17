@@ -2813,7 +2813,7 @@ body {
     position: fixed;
     right: 0;
     top: 0;
-    z-index: 1000
+    z-index: 12050
 }
 
 .music-popup {
@@ -3087,7 +3087,7 @@ body {
     text-align: center;
     top: 0;
     width: 100%;
-    z-index: 1
+    z-index: 1200
 }
 
 .bottle-game-canvas-area {

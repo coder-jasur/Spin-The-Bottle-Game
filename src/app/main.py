@@ -1,70 +1,63 @@
+"""
+Asosiy kirish nuqtasi: FastAPI + Telegram bot (polling) birga ishga tushadi.
+
+Ishga tushirish:
+    python -m src.app.main
+"""
 import asyncio
 import logging
 import sys
 from pathlib import Path
 
-# Root yo'lini sozlash
 project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-import uvicorn
-from src.app.api.app import app
+# Logging dan oldin: Windows cp1251 konsolida emoji xatosini oldini olish
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
-from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
+import uvicorn
 
 from logs.logger_conf import setup_logging
+from src.app.api.app import app, shutdown_application, startup_application
 from src.app.core.config import load_config
-from src.app.database.base import Base, Database
-from src.app.bot.middleware import register_middleware
 
-async def start_api():
+
+async def start_api() -> None:
     config = uvicorn.Config(
-        app, host="0.0.0.0", port=8000, loop="asyncio", log_level="info"
+        app,
+        host="0.0.0.0",
+        port=8000,
+        loop="asyncio",
+        log_level="info",
+        forwarded_allow_ips="*",
     )
-
     server = uvicorn.Server(config)
     await server.serve()
 
 
-async def main():
+async def main() -> None:
     try:
-        # settings = load_config()
-        # dp = Dispatcher()
-        # dsn = settings.construct_postgresql_url()
-        # db = Database(dsn)
+        settings = load_config()
+        # DB + Telegram bot polling — shu yerda (app.py lifespan emas)
+        await startup_application(
+            app, settings, start_bot_polling=True
+        )
+        app.state.bootstrapped_from_main = True
 
-        # Base.metadata.create_all odatda migratsiyalar orqali qilinadi, 
-        # # lekin birinchi marta ishga tushirish uchun bu yerda ham qoldirish mumkin.
-        # async with db.engine.begin() as conn:
-        #      await conn.run_sync(Base.metadata.create_all)
-        #
-        # dp["settings"] = settings
-        # dp["session_pool"] = db.session_factory
-        #
-        # # Middlewarelarni ro'yxatdan o'tkazish
-        # register_middleware(dp, db.session_factory)
-        #
-        # bot = Bot(
-        #     token=settings.bot_token,
-        #     default=DefaultBotProperties(parse_mode="HTML"),
-        # )
-
-        # FastAPI state
-        # app.state.db = db
-        # app.state.bot = bot
-        # app.state.dp = dp
-        # app.state.user_cache = {} # {str(id): name}
-
-        # Botni polling rejimida ishga tushirish (background task sifatida)
-        # asyncio.create_task(dp.start_polling(bot))
-
+        print("[OK] Server http://0.0.0.0:8000", flush=True)
         await start_api()
-
     except Exception as e:
-        print(f"\n❌ STARTUP ERROR: {e}")
+        print(f"\n[ERROR] STARTUP ERROR: {e}")
         logging.exception(e)
+    finally:
+        if getattr(app.state, "bootstrapped_from_main", False):
+            await shutdown_application(app)
 
 
 if __name__ == "__main__":

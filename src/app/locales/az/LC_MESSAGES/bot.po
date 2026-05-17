@@ -1,0 +1,380 @@
+# Azerbaijani translations for PROJECT.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the PROJECT project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-05-16 14:52+0500\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: az\n"
+"Language-Team: az <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+msgid ""
+"Hey! Get ready to dive into the ultimate Spin the Bottle adventure.\n"
+"\n"
+"👀 See who's around you and start a conversation\n"
+"🎁 Exchange fun surprises and playful dares\n"
+"💌 Send hidden messages to someone special\n"
+"🎲 Enjoy entertaining games together in the room\n"
+"🎶 Play along with music in the background\n"
+"\n"
+"🎮 Tap PLAY and let the fun start!\n"
+"\n"
+"⭐ Buy Stars: /store"
+msgstr ""
+"Salam! Spin the Bottle macərasına hazırsınız?\n"
+"\n"
+"👀 Ətrafınızdakıları görün və söhbətə başlayın\n"
+"🎁 Sürprizlər və tapşırıqlar paylaşın\n"
+"💌 Xüsusi birinə gizli mesaj göndərin\n"
+"🎲 Otaqda birlikdə oynayın\n"
+"🎶 Fon musiqisi ilə oynayın\n"
+"\n"
+"🎮 PLAY düyməsinə basın!\n"
+"\n"
+"⭐ Stars alın: /store"
+
+msgid "Mini App is not configured yet. Set TELEGRAM_WEBAPP_URL in .env."
+msgstr ""
+"Mini App hələ konfiqurasiya olunmayıb. .env-də TELEGRAM_WEBAPP_URL təyin "
+"edin."
+
+msgid "🎮 PLAY"
+msgstr "🎮 OYNA"
+
+msgid "⭐ Stars store"
+msgstr "⭐ Stars mağaza"
+
+msgid ""
+"⭐ <b>Stars store</b>\n"
+"\n"
+"Choose a package or <b>Custom amount</b> to enter your own value.\n"
+"After payment, the same number of ★ Stars will be added to your balance.\n"
+"\n"
+"Select a package or amount — Telegram invoice will arrive."
+msgstr ""
+"⭐ <b>Stars mağaza</b>\n"
+"\n"
+"Paket seçin və ya <b>Fərqli məbləğ</b> daxil edin.\n"
+"Ödənişdən sonra ★ Stars balansınıza əlavə olunur.\n"
+"\n"
+"Paket seçin — Telegram çeki gələcək."
+
+#, python-format
+msgid "Current balance: <b>%(sc)s</b> ★ Stars"
+msgstr "Cari balans: <b>%(sc)s</b> ★ Stars"
+
+#, python-format
+msgid "Gift tokens: <b>%(gt)s</b>"
+msgstr "Hədiyyə tokenləri: <b>%(gt)s</b>"
+
+msgid "Open the game first: /start → PLAY, then send /store again."
+msgstr "Əvvəlcə oyunu açın: /start → PLAY, sonra yenidən /store."
+
+msgid "✏️ Custom amount"
+msgstr "✏️ Fərqli məbləğ"
+
+#, python-format
+msgid ""
+"How many ★ Stars do you want?\n"
+"Send a number (e.g. <code>150</code>).\n"
+"Range: %(min)s — %(max)s\n"
+"\n"
+"Cancel: /store"
+msgstr ""
+"Neçə ★ Stars istəyirsiniz?\n"
+"Rəqəm göndərin (məs: <code>150</code>).\n"
+"Aralıq: %(min)s — %(max)s\n"
+"\n"
+"Ləğv: /store"
+
+#, python-format
+msgid ""
+"Send a whole number only (e.g. 100).\n"
+"%(err)s"
+msgstr ""
+"Yalnız tam ədəd göndərin (məs: 100).\n"
+"%(err)s"
+
+#, python-format
+msgid "Amount must be a whole number from %(min)s to %(max)s."
+msgstr "Məbləğ %(min)s–%(max)s arasında tam ədəd olmalıdır."
+
+msgid "Open the game first: /start → PLAY"
+msgstr "Əvvəlcə oyunu açın: /start → PLAY"
+
+#, python-format
+msgid "✅ Invoice for %(stars)s ★ sent — confirm payment."
+msgstr "✅ %(stars)s ★ üçün çek göndərildi — ödənişi təsdiqləyin."
+
+msgid ""
+"Invoice was not sent. Check that you have not blocked the bot, or try "
+"again later."
+msgstr "Çek göndərilmədi. Botu bloklamadığınızı yoxlayın və ya yenidən cəhd edin."
+
+msgid "Invalid package"
+msgstr "Yanlış paket"
+
+msgid "This package is not available"
+msgstr "Bu paket mövcud deyil"
+
+msgid "Open the game first (/start → PLAY)"
+msgstr "Əvvəlcə oyunu açın (/start → PLAY)"
+
+msgid "Invoice sent — confirm payment"
+msgstr "Çek göndərildi — ödənişi təsdiqləyin"
+
+msgid ""
+"Invoice was not sent. Make sure the bot is not blocked in Telegram, or "
+"try /start again."
+msgstr "Çek göndərilmədi. Botu bloklamadığınızı yoxlayın və ya /start yazın."
+
+msgid "Invalid order"
+msgstr "Sifariş etibarsızdır"
+
+#, python-format
+msgid ""
+"✅ Payment received: +%(paid)s ★\n"
+"Current balance: %(sc)s ★ Stars\n"
+"You can return to the game and continue shopping."
+msgstr ""
+"✅ Ödəniş qəbul edildi: +%(paid)s ★\n"
+"Cari balans: %(sc)s ★ Stars\n"
+"Oyuna qayıdıb alış-verişə davam edə bilərsiniz."
+
+msgid ""
+"⭐ <b>Spin Bottle</b>\n"
+"Top up Telegram Stars — then return to the game to shop."
+msgstr ""
+"⭐ <b>Spin Bottle</b>\n"
+"Telegram Stars artırın — sonra oyuna qayıdın."
+
+#, python-format
+msgid "Spin Bottle — %(stars)s ★"
+msgstr "Spin Bottle — %(stars)s ★"
+
+#, python-format
+msgid ""
+"%(stars)s Stars will be added to your account. After payment you can "
+"return to the game."
+msgstr ""
+"Hesabınıza %(stars)s Stars əlavə olunacaq. Ödənişdən sonra oyuna qayıda "
+"bilərsiniz."
+
+#, python-format
+msgid "%(stars)s Telegram Stars top-up"
+msgstr "%(stars)s Telegram Stars artırma"
+
+#, python-format
+msgid "%(stars)s Stars"
+msgstr "%(stars)s Stars"
+
+msgid "🎮 Play"
+msgstr "🎮 Oyna"
+
+msgid "🎮 Start the game"
+msgstr "🎮 Oyunu başlat"
+
+msgid "⭐ Buy Stars"
+msgstr "⭐ Stars al"
+
+#, python-format
+msgid "Hello %(victim)s! %(new_owner)s took %(target)s away from your court."
+msgstr ""
+"Salam %(victim)s! %(new_owner)s %(target)s-i sizin qulluq etdiyiniz "
+"şəxsindən aldı."
+
+msgid "🛠 Admin panel"
+msgstr "🛠 Admin panel"
+
+msgid "🛠 <b>Admin panel</b>\n\nChoose an action:"
+msgstr "🛠 <b>Admin panel</b>\n\nƏməliyyat seçin:"
+
+msgid "📥 Create DB backup"
+msgstr "📥 DB ehtiyat nüsxəsi"
+
+msgid "📤 Restore from backup"
+msgstr "📤 Ehtiyatdan bərpa"
+
+msgid "⛔ Access denied."
+msgstr "⛔ Giriş qadağandır."
+
+msgid "⏳ Creating backup, please wait…"
+msgstr "⏳ Ehtiyat yaradılır, gözləyin…"
+
+#, python-format
+msgid "✅ Backup ready.\nTables: <b>%(tables)s</b>\nRows: <b>%(rows)s</b>"
+msgstr ""
+"✅ Ehtiyat hazırdır.\nCədvəllər: <b>%(tables)s</b>\nSətirlər: <b>%(rows)s</b>"
+
+msgid ""
+"📤 Send the backup file as a <b>document</b> (<code>.json.gz</code> or "
+"<code>.json</code>)."
+msgstr ""
+"📤 Ehtiyat faylını <b>sənəd</b> kimi göndərin (<code>.json.gz</code> və ya "
+"<code>.json</code>)."
+
+#, python-format
+msgid ""
+"📂 Backup loaded.\nTables: <b>%(tables)s</b>, rows: <b>%(rows)s</b>\n\n"
+"Choose restore mode:"
+msgstr ""
+"📂 Ehtiyat yükləndi.\nCədvəllər: <b>%(tables)s</b>, sətirlər: <b>%(rows)s</b>\n\n"
+"Bərpa rejimini seçin:"
+
+msgid "➕ Restore missing rows only"
+msgstr "➕ Yalnız çatışmayan sətirlər"
+
+msgid "⚠️ Full DB replace"
+msgstr "⚠️ Tam DB əvəzləmə"
+
+msgid "❌ Cancel"
+msgstr "❌ Ləğv et"
+
+#, python-format
+msgid "✅ Merge complete. Rows added: <b>%(inserted)s</b>"
+msgstr "✅ Birləşmə bitdi. Əlavə sətir: <b>%(inserted)s</b>"
+
+#, python-format
+msgid "✅ Full restore complete. Rows restored: <b>%(rows)s</b>"
+msgstr "✅ Tam bərpa. Sətir: <b>%(rows)s</b>"
+
+#, python-format
+msgid "❌ Restore failed: %(error)s"
+msgstr "❌ Bərpa xətası: %(error)s"
+
+msgid "❌ Invalid backup file."
+msgstr "❌ Yanlış ehtiyat faylı."
+
+msgid ""
+"⚠️ <b>Full replace</b> will erase current database data and load the backup. "
+"Continue?"
+msgstr ""
+"⚠️ <b>Tam əvəzləmə</b> cari DB-ni silib ehtiyatı yükləyəcək. Davam?"
+
+msgid "⚠️ Yes, replace all"
+msgstr "⚠️ Bəli, hamısını əvəz et"
+
+msgid "Cancelled."
+msgstr "Ləğv edildi."
+
+msgid "🤝 Referral & partners"
+msgstr "🤝 Referal və tərəfdaşlar"
+
+msgid "🤝 <b>Referral & partners</b>\n\nChoose:"
+msgstr "🤝 <b>Referal və tərəfdaşlar</b>\n\nSeçin:"
+
+msgid "📋 Partner list"
+msgstr "📋 Tərəfdaş siyahısı"
+
+msgid "➕ Add partner"
+msgstr "➕ Tərəfdaş əlavə et"
+
+msgid "⚙️ Default referral bonus"
+msgstr "⚙️ Standart referal bonusu"
+
+msgid "◀️ Back"
+msgstr "◀️ Geri"
+
+msgid "No partners yet."
+msgstr "Hələ tərəfdaş yoxdur."
+
+#, python-format
+msgid "<b>Partners</b> (%(count)s):"
+msgstr "<b>Tərəfdaşlar</b> (%(count)s):"
+
+#, python-format
+msgid ""
+"• <code>%(code)s</code> — %(name)s\n"
+"  bonus: <b>%(bonus)s</b> | limit/day: <b>%(limit)s</b>\n"
+"  guests: <b>%(guests)s</b> | today: <b>%(today)s</b>/%(limit)s"
+msgstr ""
+"• <code>%(code)s</code> — %(name)s\n"
+"  bonus: <b>%(bonus)s</b> | gün limiti: <b>%(limit)s</b>\n"
+"  qonaqlar: <b>%(guests)s</b> | bu gün: <b>%(today)s</b>/%(limit)s"
+
+#, python-format
+msgid ""
+"<b>Partner</b> #%(id)s\n"
+"User: <b>%(user_id)s</b> %(name)s\n"
+"Code: <code>%(code)s</code>\n"
+"Per invite: <b>%(bonus)s</b> hearts\n"
+"Daily limit: <b>%(limit)s</b>\n"
+"Invited guests: <b>%(guests)s</b>\n"
+"Earned today: <b>%(today)s</b>\n"
+"Status: %(status)s"
+msgstr ""
+"<b>Tərəfdaş</b> #%(id)s\n"
+"İstifadəçi: <b>%(user_id)s</b> %(name)s\n"
+"Kod: <code>%(code)s</code>\n"
+"Dəvət üçün: <b>%(bonus)s</b> hearts\n"
+"Günlük limit: <b>%(limit)s</b>\n"
+"Dəvətlilər: <b>%(guests)s</b>\n"
+"Bu gün: <b>%(today)s</b>\n"
+"Status: %(status)s"
+
+#, python-format
+msgid ""
+"<b>Default referral</b> (regular users)\n"
+"Per invite: <b>%(bonus)s</b> hearts\n"
+"Daily limit: <b>%(limit)s</b>"
+msgstr ""
+"<b>Standart referal</b>\n"
+"Dəvət üçün: <b>%(bonus)s</b> hearts\n"
+"Günlük limit: <b>%(limit)s</b>"
+
+msgid "✏️ Per-invite bonus"
+msgstr "✏️ Dəvət bonusu"
+
+msgid "✏️ Daily limit"
+msgstr "✏️ Günlük limit"
+
+msgid "🔛 Toggle active"
+msgstr "🔛 Aktivlik"
+
+msgid "✅ Saved."
+msgstr "✅ Saxlanıldı."
+
+#, python-format
+msgid "❌ Error: %(error)s"
+msgstr "❌ Xəta: %(error)s"
+
+msgid "Send partner user id, Telegram id, or login/username:"
+msgstr "Tərəfdaş user id, Telegram id və ya login göndərin:"
+
+msgid ""
+"Send referral <b>partner code</b> (or <code>-</code> to use user's code):"
+msgstr ""
+"Tərəfdaş kodu (<code>-</code> — istifadəçi kodu):"
+
+msgid "Send hearts per invite (integer):"
+msgstr "Dəvət üçün hearts (tam ədəd):"
+
+msgid "Send daily hearts limit (integer, 0 = unlimited):"
+msgstr "Günlük hearts limiti (0 = limitsiz):"
+
+msgid "User not found."
+msgstr "İstifadəçi tapılmadı."
+
+msgid "Deactivate"
+msgstr "Söndür"
+
+msgid "Activate"
+msgstr "Yandır"
+
+msgid "Active"
+msgstr "Aktiv"
+
+msgid "Inactive"
+msgstr "Qeyri-aktiv"
+
