@@ -148,12 +148,15 @@ async def game_websocket(ws: WebSocket):
             player.plain_ws = True
             if uid_int:
                 player.session_token = qp_token
-            tbl = manager.tables[table_id]
+            actual_tid, _uid = manager.ws_map.get(ws, (table_id, user_id))
+            tbl = manager.tables.get(actual_tid)
+            if not tbl:
+                return
             await manager._handle_login(
                 ws,
                 tbl,
                 player,
-                {"type": "login", "id": qp_token, "room_id": table_id},
+                {"type": "login", "id": qp_token, "room_id": actual_tid},
             )
 
         while True:

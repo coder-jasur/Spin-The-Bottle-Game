@@ -26,6 +26,7 @@ from src.app.api.ws.constants import (
     HAT_TYPES_VIP,
     GIFT_TYPES_FREE,
     GIFT_TYPES_VIP,
+    GIFT_LOVE_ITEM_ID,
     KICKOUT_STREAK_RESET_SECONDS,
     league_state_for_total_kisses,
     league_tier_from_total_kisses,
@@ -176,10 +177,13 @@ class Player:
         self.guest_kickout_last_ms: int = 0
         # welcome/main.be3d9225.js: ochiq JSON matn, login query orqali ham bo‘lishi mumkin.
         self.plain_ws: bool = False
+        self.in_queue: bool = False
         self.session_started: bool = False
         # Yutiq (achievement) holati: {achievement_id: level (1-based)}.
         # `to_login_payload` orqali klientga `achievements` ro'yxati uzatiladi.
         self.achievements: Dict[str, int] = {}
+        # Mukofot qaysi darajagacha olingan (qayta claim oldini olish).
+        self.achievements_bonus_claimed: Dict[str, int] = {}
         self.is_admin: bool = False
 
     def grant_default_owned_items(self) -> None:
@@ -377,6 +381,12 @@ class Player:
             pass
 
         p.grant_default_owned_items()
+
+        love_stock = int(getattr(db_user, "gift_love_stock", 0) or 0)
+        if love_stock > 0:
+            p.items[GIFT_LOVE_ITEM_ID] = love_stock
+        else:
+            p.items.pop(GIFT_LOVE_ITEM_ID, None)
 
         return p
 

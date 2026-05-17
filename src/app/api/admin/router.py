@@ -15,6 +15,7 @@ from src.app.database.repositories.referral import ReferralRepository
 from src.app.database.models import User, AdminActionLog, BroadcastMessage, Wallet, Admins
 from src.app.database.models.stats import UserStats
 from src.app.api.ws.game_manager import manager as game_manager
+from src.app.api.ws.constants import GIFT_LOVE_UNLIMITED_MIN
 
 site_dir = Path(__file__).resolve().parents[2] / "site"
 templates = Jinja2Templates(directory=str(site_dir))
@@ -143,6 +144,7 @@ async def admin_user_metrics(
             "expense": int(getattr(user, "expense", 0) or 0),
             "importance": int(getattr(user, "importance", 0) or 0),
             "harem_price": int(getattr(user, "harem_price", 0) or 0),
+            "gift_love_stock": int(getattr(user, "gift_love_stock", 0) or 0),
         },
         "user_stats": stats,
     }
@@ -286,6 +288,98 @@ async def add_balance(
     if operation == "subtract":
         return {"success": True, "message": f"-{amount} {label} ayirildi (minimum 0)"}
     return {"success": True, "message": f"+{amount} {label} qo'shildi"}
+
+
+@router.post("/api/admin/grant-love-cocktail")
+async def grant_love_cocktail(
+    data: dict = Body(...),
+    session: AsyncSession = Depends(get_db),
+    admin_id: int = Depends(get_current_admin),
+):
+    """Mehebbet kokteyli (g_love): o'yin sovg'alar panelida ko'rinadi; >=999 cheksiz."""
+    try:
+        target_id = int(data.get("user_id"))
+    except (TypeError, ValueError):
+        return JSONResponse(
+            {"success": False, "message": "Foydalanuvchi ID noto'g'ri"},
+            status_code=400,
+        )
+
+    try:
+        amount = int(data.get("amount", 0))
+    except (TypeError, ValueError):
+        amount = 0
+
+    operation = (data.get("operation") or "add").strip().lower()
+    if operation not in ("add", "set", "subtract", "clear"):
+        operation = "add"
+
+    if operation != "clear" and amount <= 0:
+        return JSONResponse(
+            {"success": False, "message": "Miqdor musbat butun son bo'lishi kerak"},
+            status_code=400,
+        )
+
+    user_repo = UserRepository(session)
+    user = await user_repo.get_user_by_id(target_id)
+    if not user:
+        return JSONResponse({"success": False, "message": "User topilmadi"}, status_code=404)
+
+    cur = int(getattr(user, "gift_love_stock", 0) or 0)
+    if operation == "clear":
+        new_stock = 0
+        log_action = "revoke_love_cocktail_all"
+    elif operation == "set":
+        new_stock = amount
+        log_action = "set_love_cocktail"
+    elif operation == "subtract":
+        new_stock = max(0, cur - amount)
+        log_action = "revoke_love_cocktail"
+    else:
+        new_stock = cur + amount
+        log_action = "grant_love_cocktail"
+
+    user.gift_love_stock = new_stock
+
+    admin_log = AdminActionLog(
+        admin_id=admin_id,
+        target_user_id=target_id,
+        action=log_action,
+        amount=new_stock,
+        details=(
+            f"Admin {admin_id} {operation} love_cocktail "
+            f"(delta={amount if operation != 'clear' else cur}) "
+            f"for user {target_id} (was {cur}, now {new_stock})"
+        ),
+    )
+    session.add(admin_log)
+    await session.commit()
+
+    synced = await game_manager.admin_sync_gift_love_stock(target_id, new_stock)
+
+    if new_stock >= GIFT_LOVE_UNLIMITED_MIN:
+        display = "999+ (cheksiz)"
+    elif new_stock <= 0:
+        display = "0 (yo'q)"
+    else:
+        display = str(new_stock)
+
+    if operation == "clear":
+        msg = f"Kokteillar olib tashlandi (oldingi: {cur}, hozir: yo'q)"
+    elif operation == "subtract":
+        msg = f"Koktel ayirildi: −{amount} (oldingi {cur} → hozir {display})"
+    elif operation == "set":
+        msg = f"Koktel o'rnatildi: {display}"
+    else:
+        msg = f"Koktel berildi: +{amount} (hozir {display})"
+    if synced:
+        msg += " — onlayn o'yinchi yangilandi"
+    return {
+        "success": True,
+        "message": msg,
+        "gift_love_stock": new_stock,
+        "synced_online": synced,
+    }
 
 
 @router.post("/api/admin/grant-vip")

@@ -43,7 +43,8 @@ DEFAULT_SEED_COUNTRY_CODES: tuple[str, ...] = (
 # Ro'yxatda boshlang'ich ko'rinadigan stollar; keyingisi ochilishi uchun oxirgi ko'rinadigan stolda o'yinchilar soni
 BASE_VISIBLE_COUNTRY = 3
 BASE_VISIBLE_GLOBAL = 3
-BUSY_THRESHOLD_PLAYERS = 6
+# Stol to'lganida (yoki deyarli to'lganida) keyingi xona ro'yxatda paydo bo'ladi
+BUSY_THRESHOLD_PLAYERS = 12
 
 
 def normalize_country_code(c: str | None) -> str:

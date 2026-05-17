@@ -717,6 +717,31 @@ class GameRepository:
         rows = (await self.session.execute(stmt)).all()
         return {r.key: int(r.level or 0) for r in rows if r.key}
 
+    async def get_user_achievement_bonus_claimed(self, user_id: int) -> dict[str, int]:
+        """Yutuq kalit -> mukofot olingan eng yuqori daraja (1-based)."""
+        stmt = (
+            select(Achievement.key, UserAchievement.bonus_claimed_level)
+            .join(Achievement, Achievement.id == UserAchievement.achievement_id)
+            .where(UserAchievement.user_id == user_id)
+        )
+        rows = (await self.session.execute(stmt)).all()
+        return {r.key: int(r.bonus_claimed_level or 0) for r in rows if r.key}
+
+    async def set_user_achievement_bonus_claimed(
+        self, user_id: int, key: str, level: int
+    ) -> None:
+        """Berilgan yutuq uchun mukofot shu darajagacha olingan deb belgilaydi."""
+        ach = await self._get_or_create_achievement(key)
+        stmt = select(UserAchievement).where(
+            UserAchievement.user_id == user_id,
+            UserAchievement.achievement_id == ach.id,
+        )
+        ua = (await self.session.execute(stmt)).scalar_one_or_none()
+        if not ua:
+            return
+        ua.bonus_claimed_level = max(int(ua.bonus_claimed_level or 0), int(level))
+        await self.session.commit()
+
     async def upsert_user_achievement(
         self, user_id: int, key: str, level: int, *, exact: bool = False
     ) -> None:

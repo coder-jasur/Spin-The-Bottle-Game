@@ -125,6 +125,11 @@ class User(Base):
         DateTime(timezone=False), nullable=True
     )
 
+    # Mehebbet kokteyli (g_love) — o'yinda sovg'alar panelidagi hisoblagich
+    gift_love_stock: Mapped[int] = mapped_column(
+        Integer, server_default="0", nullable=False
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False
     )

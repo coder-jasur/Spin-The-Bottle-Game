@@ -169,17 +169,27 @@ class Table:
         self._offer_timeout_task = asyncio.create_task(coro)
 
     # ── Seat management ────────────────────────────────────────────────────
-    def next_free_seat(self) -> int:
-        occupied = {p.seat for p in self.players.values()}
-        for s in range(MAX_SEATS):
-            if s not in occupied:
-                return s
-        return 0
+    def is_full(self) -> bool:
+        return len(self.players) >= MAX_SEATS
 
-    def add_player(self, player: "Player"):
-        player.seat     = self.next_free_seat()
+    def next_free_seat(self) -> int:
+        """Bo'sh o'rinlardan tasodifiy bittasini beradi; joy bo'lmasa -1."""
+        occupied = {p.seat for p in self.players.values()}
+        free = [s for s in range(MAX_SEATS) if s not in occupied]
+        if not free:
+            return -1
+        return random.choice(free)
+
+    def add_player(self, player: "Player") -> bool:
+        if self.is_full():
+            return False
+        seat = self.next_free_seat()
+        if seat < 0:
+            return False
+        player.seat = seat
         player.table_id = self.table_id
         self.players[player.id] = player
+        return True
 
     def remove_player(self, user_id: str):
         self.players.pop(user_id, None)

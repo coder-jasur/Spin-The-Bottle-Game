@@ -12,6 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.app.api.auth.user_payload import game_display_name
 from src.app.api.ws.player import parse_birth_date_ms
 from src.app.core.jwt import verify_access_token
+from src.app.core.username import (
+    normalize_game_username,
+    validate_game_username,
+)
 from src.app.database.repositories.user import UserRepository
 from src.app.services.telegram_profile import _PHOTOS_DIR, _is_valid_image_bytes
 
@@ -209,9 +213,13 @@ async def update_game_username(
         raise HTTPException(status_code=404, detail="User not found")
 
     if "game_username" in data:
-        new_name = str(data["game_username"]).strip().lstrip("@")[:30]
+        new_name = normalize_game_username(str(data["game_username"]))
+        err = validate_game_username(new_name)
+        if err:
+            raise HTTPException(status_code=400, detail=err)
         if new_name and user.username != new_name:
             user.username = new_name
+            user.display_name = new_name
             user.username_change_count = int(user.username_change_count or 0) + 1
     if "status" in data:
         user.status_text = data["status"]

@@ -92,6 +92,8 @@ STATE_SELECT   = "wait_select"
 
 # ── Stol ──────────────────────────────────────────────────────────────────
 MAX_SEATS = 12
+# Oxirgi ko'rinadigan stol shuncha o'yinchi (yoki navbat) bo'lsa — keyingi stol menyuda ochiladi
+TABLE_BUSY_OPEN_NEXT = MAX_SEATS
 
 # HTML5 bottle (plain_ws): har qanday xabardan keyin faollik; shundan oshsa uziladi
 BOTTLE_PLAIN_IDLE_DISCONNECT_MS = 10 * 60 * 1000

@@ -20,6 +20,10 @@ class UserAchievement(Base):
 
     status: Mapped[str] = mapped_column(Text, default="locked", nullable=False) # locked, completed
     level: Mapped[int] = mapped_column(Integer, default=0, nullable=False) # 1-5 stars
+    # Qaysi darajagacha mukofot (gold) olingan — qayta claim oldini olish
+    bonus_claimed_level: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
 
     # Relationship
     user = relationship("User", back_populates="achievements")

@@ -15,6 +15,10 @@ _SCHEMA_PATCHES: tuple[str, ...] = (
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITHOUT TIME ZONE
     NOT NULL DEFAULT NOW()
     """,
+    """
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS gift_love_stock INTEGER NOT NULL DEFAULT 0
+    """,
 )
 
 
