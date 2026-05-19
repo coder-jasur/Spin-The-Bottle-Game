@@ -3969,11 +3969,36 @@ class GameManager:
         # Yutuq tekshiruvi — target uchun (mashhurlik o'sishi)
         await self._check_achievements(target, "harem_price", target.harem_price)
 
+    def _harem_dismiss_hearts_cost(self, harem_price: int) -> int:
+        """Otkaz: oxirgi uxajor to'lagan narx + 1 = joriy harem_price (11→12)."""
+        return max(1, int(harem_price or 1))
+
+    async def _charge_harem_dismiss(
+        self, player: Player, cost: int, target_ref: str
+    ) -> bool:
+        if cost <= 0:
+            return True
+        if not getattr(player, "is_admin", False) and player.hearts < cost:
+            await self._harem_purchase_fail(player, "not_enough_gold")
+            return False
+        ok = await self._spend_hearts(
+            player, cost, "harem_dismiss", f"harem_dismiss:{target_ref}"
+        )
+        if not ok:
+            await self._harem_purchase_fail(player, "not_enough_gold")
+            return False
+        await self._handle_get_wallet(player)
+        return True
+
     async def _handle_harem_release(self, table: Table, player: Player, target: Player):
-        """O'z profilidagi «otkazatsa» / leave: harem_owner_id ni bo'shatadi (gold yo'q)."""
+        """O'z profilidagi «otkaz» / leave: harem_owner_id bo'shatiladi, hearts yechiladi."""
         cur_owner = int(target.harem_owner_id or 0)
         if not cur_owner:
             await self._harem_purchase_fail(player, "invalid_target")
+            return
+
+        dismiss_cost = self._harem_dismiss_hearts_cost(target.harem_price)
+        if not await self._charge_harem_dismiss(player, dismiss_cost, target.id):
             return
 
         old_owner_short = None
@@ -4002,7 +4027,7 @@ class GameManager:
         hp = {
             "type": "harem_purchase",
             "ts": self._ts(),
-            "price": 0,
+            "price": dismiss_cost,
             "price_rank": new_price,
             "target": target.to_short(),
             "new_owner": target.to_short(),
@@ -4012,9 +4037,10 @@ class GameManager:
 
         await self.broadcast(table.table_id, hp)
         log.info(
-            "HAREM release: %s dismissed admirer db_id=%s",
+            "HAREM release: %s dismissed admirer db_id=%s cost=%s",
             player.username,
             cur_owner,
+            dismiss_cost,
         )
 
     # ════════════════════════════════════════════════════════════════════════
@@ -4260,12 +4286,18 @@ class GameManager:
                     player, target_db_id, live_target, raw_target
                 )
             ):
+                dismiss_cost = self._harem_dismiss_hearts_cost(cur_price)
+                if not await self._charge_harem_dismiss(
+                    player, dismiss_cost, raw_target
+                ):
+                    return
                 dismissed = True
                 log.info(
-                    "LIKE/cancel: owner=%s dismissed admirer db_id=%s from profile %s",
+                    "LIKE/cancel: owner=%s dismissed admirer db_id=%s from profile %s cost=%s",
                     player.id,
                     cur_owner,
                     raw_target,
+                    dismiss_cost,
                 )
             if dismissed:
                 await self._clear_target_harem_owner(
@@ -4455,15 +4487,17 @@ class GameManager:
         is_vip = bool(extra.vip if extra else False)
         is_moderator = bool(getattr(extra, "is_admin", False))
         total_kiss_count = int(extra.total_kisses if extra else 0) or 0
-        kiss_rank = 1
         total_music_count = int(extra.dj_score if extra else 0) or 0
-        music_rank = 1
         # smile_count: umumiy iltifotlar (lifetime) + bank sikli (kamida)
         _life = int(getattr(extra, "compliments_lifetime", 0) or 0) if extra else 0
         _sent = int(getattr(extra, "compliments_sent", 0) or 0) if extra else 0
         total_smile_count = max(_life, _sent)
-        smile_rank = 1
-        top = False
+
+        ranks, top = await self._fetch_profile_ranks(target_db_id)
+
+        kiss_rank = int(ranks.get("total_kisses_rank") or 0)
+        music_rank = int(ranks.get("dj_score_rank") or 0)
+        smile_rank = int(ranks.get("gestures_rank") or 0)
         league_name = ""
         frame_name = (extra.frame if extra else "") or ""
         vip_color = getattr(extra, "vip_color", None)
@@ -4497,7 +4531,12 @@ class GameManager:
             "liked_by_username": liked_by_username,
             "liked_by_profile_picture": liked_by_photo,
             "like_price": int(cur_price or 1),
-            "like_price_rank": int(cur_price or 1),
+            "like_price_rank": int(ranks.get("price_rank") or 0),
+            "price_rank": int(ranks.get("price_rank") or 0),
+            "harem_price_rank": int(ranks.get("harem_price_rank") or 0),
+            "total_kisses_rank": kiss_rank,
+            "dj_score_rank": music_rank,
+            "gestures_rank": smile_rank,
             "ts": self._ts(),
         }
 
@@ -4847,28 +4886,54 @@ class GameManager:
             }
         )
 
+    # Profil / get_tops: DB ustun → klientdagi rank maydoni
+    _PROFILE_RANK_COLUMNS: tuple[tuple[str, str], ...] = (
+        ("total_kisses_rank", "kisses"),
+        ("dj_score_rank", "dj"),
+        ("gestures_rank", "emotion"),
+        ("price_rank", "harem_price"),
+        ("harem_price_rank", "harem_courts_received"),
+    )
+    TOP_RANK_MAX = 10
+
+    async def _fetch_profile_ranks(self, db_id: Optional[int]) -> tuple[dict[str, int], bool]:
+        """(rank_maydonlari, top_10_ichidami) — har qanday reytingda 1..10."""
+        ranks: dict[str, int] = {key: 0 for key, _ in self._PROFILE_RANK_COLUMNS}
+        if not db_id:
+            return ranks, False
+        in_top = False
+        try:
+            async with self._db() as repo:
+                for key, col in self._PROFILE_RANK_COLUMNS:
+                    rk, _ = await repo.get_user_rank_by_column(db_id, col)
+                    ranks[key] = int(rk or 0)
+                    if 1 <= ranks[key] <= self.TOP_RANK_MAX:
+                        in_top = True
+        except Exception as e:
+            log.error(f"_fetch_profile_ranks: {e}")
+        return ranks, in_top
+
+    async def _apply_profile_ranks_to_payload(
+        self, payload: dict, db_id: Optional[int]
+    ) -> dict[str, int]:
+        """Reyting o‘rinlari va `top` ni payload ga yozadi."""
+        ranks, in_top = await self._fetch_profile_ranks(db_id)
+        payload["top"] = in_top
+        for key, val in ranks.items():
+            payload[key] = val
+        return ranks
+
     async def _enrich_get_profile_payload(
         self, payload: dict, db_id: Optional[int]
     ) -> None:
         """Klient profil dialogi: «в рейтинге» va yutiq kubogi (achievements)."""
         if not db_id:
             payload.setdefault("achievements", [])
+            payload.setdefault("top", False)
             return
         try:
+            await self._apply_profile_ranks_to_payload(payload, db_id)
             async with self._db() as repo:
-                rk, _ = await repo.get_user_rank_by_column(db_id, "kisses")
-                payload["total_kisses_rank"] = rk
-                rk, _ = await repo.get_user_rank_by_column(db_id, "dj")
-                payload["dj_score_rank"] = rk
-                rk, _ = await repo.get_user_rank_by_column(db_id, "emotion")
-                payload["gestures_rank"] = rk
-                rk, _ = await repo.get_user_rank_by_column(db_id, "harem_price")
-                payload["price_rank"] = rk
-                rk, _ = await repo.get_user_rank_by_column(
-                    db_id, "harem_courts_received"
-                )
-                payload["harem_price_rank"] = rk
-
                 ach = await repo.get_user_achievements(db_id)
                 payload["achievements"] = [
                     {
@@ -4881,6 +4946,7 @@ class GameManager:
         except Exception as e:
             log.error(f"_enrich_get_profile_payload: {e}")
             payload.setdefault("achievements", [])
+            payload.setdefault("top", False)
 
     async def _handle_get_profile(self, player: Player, data: dict):
         target_raw = str(data.get("user_id", player.id)).strip()
