@@ -87,8 +87,8 @@ from src.app.database.repositories.game import GameRepository
 
 log = logging.getLogger("spinbottle")
 
-# Haydalgandan keyin shu stolga qayta kirish (ms)
-KICK_REENTRY_BAN_MS = 15 * 60 * 1000
+# Haydalgandan keyin shu stolga qayta kirish (ms). 0 = taqiq yo'q.
+KICK_REENTRY_BAN_MS = 0
 # HTML5: ikkinchi qurilma — eski WS `reason` (klient dialog uchun)
 DUPLICATE_DEVICE_CLOSE_REASON = "DUPLICATE_DEVICE_LOGIN"
 IDLE_TIMEOUT_CLOSE_REASON = "IDLE_TIMEOUT_10M"
@@ -289,8 +289,19 @@ class GameManager:
             return False, 0
         return True, until
 
+    def _kick_reentry_ban_msg(self, until_ts: int) -> str:
+        if KICK_REENTRY_BAN_MS <= 0:
+            return "Bu stoldan haydalgansiz."
+        remain = max(1, (until_ts - self._ts() + 999) // 1000)
+        if remain >= 60:
+            m = (remain + 59) // 60
+            return f"Bu stoldan haydalgansiz. {m} daqiqadan keyin qayta kirishingiz mumkin."
+        return f"Bu stoldan haydalgansiz. {remain} soniyadan keyin qayta kirishingiz mumkin."
+
     def register_kick_reentry_ban(self, table_id: str, target: Player) -> None:
-        """Haydashdan keyin shu stolga 15 daqiqa kirish taqiqi."""
+        """Haydashdan keyin shu stolga vaqtincha kirish taqiqi (KICK_REENTRY_BAN_MS)."""
+        if KICK_REENTRY_BAN_MS <= 0:
+            return
         tid = str(table_id)
         if target.db_id:
             key = (tid, "u", int(target.db_id))
@@ -302,7 +313,7 @@ class GameManager:
     async def _reject_ws_kick_reentry(self, ws: WebSocket, until_ts: int) -> None:
         msg = {
             "type": "error",
-            "msg": "Bu stoldan haydalgansiz. 15 daqiqadan keyin qayta kirishingiz mumkin.",
+            "msg": self._kick_reentry_ban_msg(until_ts),
             "kick_ban_until": until_ts,
             "ts": self._ts(),
         }
@@ -2084,7 +2095,7 @@ class GameManager:
                 player,
                 {
                     "type": "error",
-                    "msg": "Bu stoldan haydalgansiz. 15 daqiqadan keyin qayta urinib ko'ring.",
+                    "msg": self._kick_reentry_ban_msg(until_ts),
                     "kick_ban_until": until_ts,
                     "ts": self._ts(),
                 },
@@ -5219,7 +5230,7 @@ class GameManager:
                 player,
                 {
                     "type": "error",
-                    "msg": "Bu stoldan haydalgansiz. 15 daqiqadan keyin qayta urinib ko'ring.",
+                    "msg": self._kick_reentry_ban_msg(until_ts),
                     "kick_ban_until": until_ts,
                     "ts": self._ts(),
                 },
@@ -5291,7 +5302,7 @@ class GameManager:
                         player,
                         {
                             "type": "error",
-                            "msg": "Bu stoldan haydalgansiz. 15 daqiqadan keyin qayta urinib ko'ring.",
+                            "msg": self._kick_reentry_ban_msg(until_ts),
                             "kick_ban_until": until_ts,
                             "ts": self._ts(),
                         },
