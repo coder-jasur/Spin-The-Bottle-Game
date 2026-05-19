@@ -3970,24 +3970,53 @@ class GameManager:
         await self._check_achievements(target, "harem_price", target.harem_price)
 
     def _harem_dismiss_hearts_cost(self, harem_price: int) -> int:
-        """Otkaz: oxirgi uxajor to'lagan narx + 1 = joriy harem_price (11→12)."""
-        return max(1, int(harem_price or 1))
+        """Otkaz: profil egasidan oxirgi uxajorlik narxi (10 to'langan → harem_price 11)."""
+        return max(1, int(harem_price or 1) - 1)
+
+    async def _push_wallet_to_player(self, player: Player) -> None:
+        """DB dan qayta o'qimasdan — xotiradagi balansni klientga yuboradi."""
+        self._admin_floor_wallet(player)
+        wf = player.wallet_for_client()
+        await self.send_to(
+            player,
+            {"type": "get_wallet", "ok": True, **wf, "ts": self._ts()},
+        )
 
     async def _charge_harem_dismiss(
         self, player: Player, cost: int, target_ref: str
     ) -> bool:
         if cost <= 0:
             return True
-        if not getattr(player, "is_admin", False) and player.hearts < cost:
+        if getattr(player, "is_admin", False):
+            return True
+        if player.hearts < cost:
             await self._harem_purchase_fail(player, "not_enough_gold")
             return False
-        ok = await self._spend_hearts(
-            player, cost, "harem_dismiss", f"harem_dismiss:{target_ref}"
-        )
-        if not ok:
-            await self._harem_purchase_fail(player, "not_enough_gold")
-            return False
-        await self._handle_get_wallet(player)
+
+        player.hearts -= cost
+        player.hearts_real = int(player.hearts or 0)
+
+        if player.db_id:
+            try:
+                async with self._db() as repo:
+                    ok, new_bal = await repo.spend_hearts(
+                        int(player.db_id),
+                        cost,
+                        "harem_dismiss",
+                        f"harem_dismiss:{target_ref}",
+                    )
+            except Exception as e:
+                log.error("harem_dismiss DB: %s", e)
+                ok, new_bal = False, player.hearts
+            if not ok:
+                player.hearts += cost
+                player.hearts_real = int(player.hearts or 0)
+                await self._harem_purchase_fail(player, "not_enough_gold")
+                return False
+            player.hearts = int(new_bal)
+            player.hearts_real = int(new_bal)
+
+        await self._push_wallet_to_player(player)
         return True
 
     async def _handle_harem_release(self, table: Table, player: Player, target: Player):
@@ -4031,11 +4060,17 @@ class GameManager:
             "price_rank": new_price,
             "target": target.to_short(),
             "new_owner": target.to_short(),
+            "gold": int(player.hearts or 0),
+            "goldReal": int(player.hearts_real or 0),
         }
         if old_owner_short:
             hp["old_owner"] = old_owner_short
 
-        await self.broadcast(table.table_id, hp)
+        await self.send_to(player, hp)
+        await self.broadcast(
+            table.table_id,
+            {k: v for k, v in hp.items() if k not in ("gold", "goldReal")},
+        )
         log.info(
             "HAREM release: %s dismissed admirer db_id=%s cost=%s",
             player.username,
