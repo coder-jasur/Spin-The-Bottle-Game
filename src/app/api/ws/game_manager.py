@@ -4976,17 +4976,9 @@ class GameManager:
     ) -> dict[str, int]:
         """Reyting o‘rinlari va `top` ni payload ga yozadi."""
         ranks, in_top = await self._fetch_profile_ranks(db_id)
+        payload["top"] = in_top
         for key, val in ranks.items():
             payload[key] = val
-        payload["kiss_rank"] = int(ranks.get("total_kisses_rank") or 0)
-        payload["music_rank"] = int(ranks.get("dj_score_rank") or 0)
-        payload["smile_rank"] = int(ranks.get("gestures_rank") or 0)
-        if not in_top:
-            in_top = any(
-                1 <= int(ranks.get(k) or 0) <= self.TOP_RANK_MAX
-                for k, _ in self._PROFILE_RANK_COLUMNS
-            )
-        payload["top"] = bool(in_top)
         return ranks
 
     async def _enrich_get_profile_payload(
@@ -6246,12 +6238,12 @@ class GameManager:
     _LEGACY_TOPS_COL_MAP = {
         "total_kisses": "kisses",
         "dj_score": "dj",
-        # «Самые влиятельные» — necha marta uxajorlik olgan
-        "harem_price": "harem_courts_received",
+        # «Самые влиятельные» — profil «2 yurak» = users.harem_price (joriy narx)
+        "harem_price": "harem_price",
         # «Emotsiyalar» reytingi — faqat users.emotion (game_gesture +1)
         "gestures": "emotion",
-        # «Самые дорогие» — joriy uxajor narxi (users.harem_price)
-        "price": "harem_price",
+        # «Самые дорогие» — profil «1 yurak» = users.expense (sovg'a xarajati)
+        "price": "expense",
         # Eski (UserStats) atashlar — backward compatibility uchun
         "kisses": "kisses",
         "dj": "dj",
