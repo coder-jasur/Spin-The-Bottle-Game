@@ -1187,6 +1187,36 @@ class GameManager:
             "women": w,
         }
 
+    async def _friend_ids_for_games_lookup(
+        self, player: Player, data: dict
+    ) -> List[int]:
+        """Stol almashish: klient friend_ids + DB dagi o'yin ichidagi do'stlar."""
+        seen: set[int] = set()
+        out: List[int] = []
+
+        def add(raw: object) -> None:
+            try:
+                fid = int(raw)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                return
+            if fid <= 0 or fid in seen:
+                return
+            seen.add(fid)
+            out.append(fid)
+
+        for x in data.get("friend_ids") or []:
+            add(x)
+
+        if player.db_id:
+            try:
+                async with self._db() as repo:
+                    for f in await repo.get_friends(int(player.db_id)):
+                        add(f.id)
+            except Exception as e:
+                log.error("friend_ids_for_games_lookup DB: %s", e)
+
+        return out
+
     def _friend_game_history_row(
         self,
         table_id: str,
@@ -2141,14 +2171,7 @@ class GameManager:
         fellows_rows: List[dict] = []
         history_entries: list[dict] = []
         try:
-            raw_ids = data.get("friend_ids") or []
-            friend_ids: List[int] = []
-            for x in raw_ids:
-                try:
-                    friend_ids.append(int(x))
-                except (TypeError, ValueError):
-                    continue
-
+            friend_ids = await self._friend_ids_for_games_lookup(player, data)
             seen_games: set[str] = set()
 
             for fid in friend_ids[:100]:
@@ -5397,77 +5420,85 @@ class GameManager:
 
     async def _handle_goto_user(self, ws: WebSocket, player: Player, data: dict):
         target_id = str(data.get("user_id", "")).strip()
-        for tid, t in self.tables.items():
-            if target_id in t.players and tid != player.table_id:
-                if self._db_factory:
-                    try:
-                        rid = int(tid)
-                        async with self._db() as repo:
-                            row = await repo.get_table_by_id(rid)
-                            if row:
-                                cc = normalize_country_code(
-                                    player.country or "UZBEKISTAN"
-                                )
-                                is_guest = player.db_id is None
-                                if not player_may_join_room_row(
-                                    cc, row.country_code, is_guest=is_guest
-                                ):
-                                    await self.send_to(
-                                        player,
-                                        {
-                                            "type": "error",
-                                            "msg": "Bu o'yinchining stoli sizning mamlakatingiz uchun emas",
-                                            "ts": self._ts(),
-                                        },
-                                    )
-                                    return
-                                if not await self._room_id_is_visible_for_country(
-                                    cc, tid
-                                ):
-                                    await self.send_to(
-                                        player,
-                                        {
-                                            "type": "error",
-                                            "msg": "Bu stol hali ro'yxatda ochilmagan",
-                                            "ts": self._ts(),
-                                        },
-                                    )
-                                    return
-                    except (ValueError, TypeError):
-                        pass
-                    except Exception as e:
-                        log.debug(f"goto_user room check: {e}")
-                old_uid = player.id
-                blocked, until_ts = self.kick_reentry_blocked(tid, old_uid)
-                if blocked:
-                    await self.send_to(
-                        player,
-                        {
-                            "type": "error",
-                            "msg": self._kick_reentry_ban_msg(until_ts),
-                            "kick_ban_until": until_ts,
-                            "ts": self._ts(),
-                        },
-                    )
-                    return
-                await self.disconnect(ws)
-                new_player = await self.connect(ws, tid, old_uid, strict=True)
-                if not new_player:
-                    log.warning(f"goto_user connect failed: {old_uid} -> {tid}")
-                    return
-                ts = self._ts()
-                if not getattr(new_player, "plain_ws", False):
-                    login_pl = await self._login_payload_with_friends(
-                        new_player, tid, ts
-                    )
-                    await self.send_to(new_player, login_pl)
-                    await asyncio.sleep(0.2)
-                await self._finish_table_join(new_player, tid, ts)
-                return
-        await self.send_to(
-            player,
-            {"type": "error", "msg": "Foydalanuvchi topilmadi", "ts": self._ts()},
-        )
+        if not target_id:
+            await self.send_to(
+                player,
+                {"type": "error", "msg": "Foydalanuvchi topilmadi", "ts": self._ts()},
+            )
+            return
+
+        loc = self._find_player_table(target_id)
+        if not loc:
+            await self.send_to(
+                player,
+                {"type": "error", "msg": "Foydalanuvchi topilmadi", "ts": self._ts()},
+            )
+            return
+
+        tid, _t, _pl = loc
+        if tid == player.table_id:
+            return
+
+        if self._db_factory:
+            try:
+                rid = int(tid)
+                async with self._db() as repo:
+                    row = await repo.get_table_by_id(rid)
+                    if row:
+                        cc = normalize_country_code(player.country or "UZBEKISTAN")
+                        is_guest = player.db_id is None
+                        if not player_may_join_room_row(
+                            cc, row.country_code, is_guest=is_guest
+                        ):
+                            await self.send_to(
+                                player,
+                                {
+                                    "type": "error",
+                                    "msg": "Bu o'yinchining stoli sizning mamlakatingiz uchun emas",
+                                    "ts": self._ts(),
+                                },
+                            )
+                            return
+                        if not await self._room_id_is_visible_for_country(cc, tid):
+                            await self.send_to(
+                                player,
+                                {
+                                    "type": "error",
+                                    "msg": "Bu stol hali ro'yxatda ochilmagan",
+                                    "ts": self._ts(),
+                                },
+                            )
+                            return
+            except (ValueError, TypeError):
+                pass
+            except Exception as e:
+                log.debug(f"goto_user room check: {e}")
+
+        old_uid = player.id
+        blocked, until_ts = self.kick_reentry_blocked(tid, old_uid)
+        if blocked:
+            await self.send_to(
+                player,
+                {
+                    "type": "error",
+                    "msg": self._kick_reentry_ban_msg(until_ts),
+                    "kick_ban_until": until_ts,
+                    "ts": self._ts(),
+                },
+            )
+            return
+
+        await self.disconnect(ws)
+        new_player = await self.connect(ws, tid, old_uid, strict=True)
+        if not new_player:
+            log.warning(f"goto_user connect failed: {old_uid} -> {tid}")
+            return
+        ts = self._ts()
+        if not getattr(new_player, "plain_ws", False):
+            login_pl = await self._login_payload_with_friends(new_player, tid, ts)
+            await self.send_to(new_player, login_pl)
+            await asyncio.sleep(0.2)
+        await self._finish_table_join(new_player, tid, ts)
 
     async def _handle_goto_room(self, ws: WebSocket, player: Player, data: dict):
         """Tarix / ko'rish: game_id bo'yicha xonaga o'tish (change_room bilan bir xil)."""
