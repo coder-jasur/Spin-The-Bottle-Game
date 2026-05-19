@@ -727,3 +727,11 @@ Traceback (most recent call last):
 2026-05-20 04:10:56 | INFO | _client.py:1740 | HTTP Request: GET https://yt-search-and-download-mp3.p.rapidapi.com/search?query=music&limit=48 "HTTP/1.1 200 OK"
 2026-05-20 04:11:09 | INFO | dispatcher.py:596 | Start polling
 2026-05-20 04:11:09 | INFO | dispatcher.py:378 | Run polling for bot @AnonimChatAppBot id=8510901014 - 'AnonimChatAppBot'
+2026-05-20 04:50:32 | INFO | dispatcher.py:413 | Polling stopped for bot @AnonimChatAppBot id=8510901014 - 'AnonimChatAppBot'
+2026-05-20 04:50:32 | INFO | dispatcher.py:624 | Polling stopped
+2026-05-20 04:50:43 | INFO | _client.py:1740 | HTTP Request: GET https://yt-search-and-download-mp3.p.rapidapi.com/search?q=music&limit=48 "HTTP/1.1 429 Too Many Requests"
+2026-05-20 04:50:44 | INFO | _client.py:1740 | HTTP Request: GET https://yt-search-and-download-mp3.p.rapidapi.com/search?query=music&limit=48 "HTTP/1.1 429 Too Many Requests"
+2026-05-20 04:50:45 | INFO | _client.py:1740 | HTTP Request: GET https://yt-search-and-download-mp3.p.rapidapi.com/search?q=music "HTTP/1.1 429 Too Many Requests"
+2026-05-20 04:50:47 | INFO | _client.py:1740 | HTTP Request: GET https://yt-search-and-download-mp3.p.rapidapi.com/ytsearch?q=music&limit=48 "HTTP/1.1 404 Not Found"
+2026-05-20 04:51:05 | INFO | dispatcher.py:596 | Start polling
+2026-05-20 04:51:05 | INFO | dispatcher.py:378 | Run polling for bot @SpinbottleTgBot id=7989724389 - 'Spin the Bottle 🍾❤️'
