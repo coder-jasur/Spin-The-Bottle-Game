@@ -5202,6 +5202,30 @@ class GameManager:
         await self._push_gift_love_stock(player)
         return True
 
+    async def admin_sync_wallet_after_reset(
+        self, user_id: int, *, still_admin: bool = False
+    ) -> None:
+        """Wallet DB allaqachon 0 — onlayn o'yinchini sinxronlash."""
+        uid = int(user_id)
+        player = self._find_online_player_by_db_id(uid)
+        if not player:
+            return
+
+        player.hearts = 0
+        player.hearts_real = 0
+        player.gift_tokens = 0
+        player.stars_coin = 0
+
+        if still_admin:
+            player.apply_admin_privileges()
+        else:
+            player.is_admin = False
+
+        try:
+            await self._push_wallet_sync(player)
+        except Exception as e:
+            log.debug("admin_sync_wallet_after_reset user=%s: %s", uid, e)
+
     # ════════════════════════════════════════════════════════════════════════
     # NAVIGATION
     # ════════════════════════════════════════════════════════════════════════

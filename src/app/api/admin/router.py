@@ -604,6 +604,9 @@ async def manage_admin(
     if not target_user:
         return JSONResponse({"success": False, "message": "Foydalanuvchi topilmadi"}, status_code=404)
     
+    wallet_reset = False
+    wallet_still_admin = False
+
     if action == "add":
         # Tekshiramiz, u allaqachon adminmi?
         stmt = select(Admins).where(Admins.user_id == target_user.id)
@@ -613,7 +616,9 @@ async def manage_admin(
         else:
             new_admin = Admins(user_id=target_user.id, role=role)
             session.add(new_admin)
-            
+            wallet_reset = True
+            wallet_still_admin = True
+
     elif action == "delete":
         # Main adminni o'chirib bo'lmaydi
         from src.app.core.config import load_config
@@ -625,6 +630,8 @@ async def manage_admin(
         existing = (await session.execute(stmt)).scalar_one_or_none()
         if existing:
             await session.delete(existing)
+            wallet_reset = True
+            wallet_still_admin = False
         else:
              return JSONResponse({"success": False, "message": "Foydalanuvchi admin emas"}, status_code=400)
             
@@ -636,7 +643,17 @@ async def manage_admin(
         else:
             return JSONResponse({"success": False, "message": "Foydalanuvchi admin emas"}, status_code=400)
             
+    if wallet_reset:
+        game_repo = GameRepository(session)
+        await game_repo.reset_wallet_currencies(target_user.id)
+
     await session.commit()
+
+    if wallet_reset:
+        await game_manager.admin_sync_wallet_after_reset(
+            target_user.id, still_admin=wallet_still_admin
+        )
+
     return {"success": True, "message": f"Admin muvaffaqiyatli {action} qilindi"}
 
 @router.get("/api/admin/stats")

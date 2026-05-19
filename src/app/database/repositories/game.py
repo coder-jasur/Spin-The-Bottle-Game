@@ -154,6 +154,14 @@ class GameRepository:
             return wallet
         raise RuntimeError(f"ensure_wallet failed for user_id={user_id}")
 
+    async def reset_wallet_currencies(self, user_id: int) -> None:
+        """Wallet dagi barcha valyutalarni 0 ga tushiradi."""
+        wallet = await self.ensure_wallet(user_id)
+        wallet.hearts = 0
+        wallet.stars_coin = 0
+        wallet.gift_tokens = 0
+        await self.session.flush()
+
     async def add_hearts(self, user_id: int, amount: int,
                          tx_type: str, description: str = "") -> int:
         """Hearts qo'shadi va yangi balansni qaytaradi."""
