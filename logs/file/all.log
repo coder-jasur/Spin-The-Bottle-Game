@@ -705,3 +705,25 @@ Traceback (most recent call last):
 2026-05-19 23:55:39 | INFO | dispatcher.py:378 | Run polling for bot @AnonimChatAppBot id=8510901014 - 'AnonimChatAppBot'
 2026-05-19 23:58:01 | INFO | dispatcher.py:413 | Polling stopped for bot @AnonimChatAppBot id=8510901014 - 'AnonimChatAppBot'
 2026-05-19 23:58:01 | INFO | dispatcher.py:624 | Polling stopped
+2026-05-20 03:33:42 | INFO | _client.py:1740 | HTTP Request: GET https://yt-search-and-download-mp3.p.rapidapi.com/search?q=music&limit=48 "HTTP/1.1 500 Internal Server Error"
+2026-05-20 03:33:44 | INFO | _client.py:1740 | HTTP Request: GET https://yt-search-and-download-mp3.p.rapidapi.com/search?query=music&limit=48 "HTTP/1.1 200 OK"
+2026-05-20 03:33:57 | INFO | dispatcher.py:596 | Start polling
+2026-05-20 03:33:57 | INFO | dispatcher.py:378 | Run polling for bot @AnonimChatAppBot id=8510901014 - 'AnonimChatAppBot'
+2026-05-20 03:40:25 | INFO | dispatcher.py:413 | Polling stopped for bot @AnonimChatAppBot id=8510901014 - 'AnonimChatAppBot'
+2026-05-20 03:40:25 | INFO | dispatcher.py:624 | Polling stopped
+2026-05-20 03:40:39 | INFO | _client.py:1740 | HTTP Request: GET https://yt-search-and-download-mp3.p.rapidapi.com/search?q=music&limit=48 "HTTP/1.1 500 Internal Server Error"
+2026-05-20 03:40:41 | INFO | _client.py:1740 | HTTP Request: GET https://yt-search-and-download-mp3.p.rapidapi.com/search?query=music&limit=48 "HTTP/1.1 200 OK"
+2026-05-20 03:40:55 | INFO | dispatcher.py:596 | Start polling
+2026-05-20 03:40:55 | INFO | dispatcher.py:378 | Run polling for bot @AnonimChatAppBot id=8510901014 - 'AnonimChatAppBot'
+2026-05-20 03:44:55 | INFO | dispatcher.py:413 | Polling stopped for bot @AnonimChatAppBot id=8510901014 - 'AnonimChatAppBot'
+2026-05-20 03:44:55 | INFO | dispatcher.py:624 | Polling stopped
+2026-05-20 03:45:09 | INFO | _client.py:1740 | HTTP Request: GET https://yt-search-and-download-mp3.p.rapidapi.com/search?q=music&limit=48 "HTTP/1.1 500 Internal Server Error"
+2026-05-20 03:45:10 | INFO | _client.py:1740 | HTTP Request: GET https://yt-search-and-download-mp3.p.rapidapi.com/search?query=music&limit=48 "HTTP/1.1 200 OK"
+2026-05-20 03:45:25 | INFO | dispatcher.py:596 | Start polling
+2026-05-20 03:45:25 | INFO | dispatcher.py:378 | Run polling for bot @AnonimChatAppBot id=8510901014 - 'AnonimChatAppBot'
+2026-05-20 04:10:41 | INFO | dispatcher.py:413 | Polling stopped for bot @AnonimChatAppBot id=8510901014 - 'AnonimChatAppBot'
+2026-05-20 04:10:41 | INFO | dispatcher.py:624 | Polling stopped
+2026-05-20 04:10:54 | INFO | _client.py:1740 | HTTP Request: GET https://yt-search-and-download-mp3.p.rapidapi.com/search?q=music&limit=48 "HTTP/1.1 500 Internal Server Error"
+2026-05-20 04:10:56 | INFO | _client.py:1740 | HTTP Request: GET https://yt-search-and-download-mp3.p.rapidapi.com/search?query=music&limit=48 "HTTP/1.1 200 OK"
+2026-05-20 04:11:09 | INFO | dispatcher.py:596 | Start polling
+2026-05-20 04:11:09 | INFO | dispatcher.py:378 | Run polling for bot @AnonimChatAppBot id=8510901014 - 'AnonimChatAppBot'
