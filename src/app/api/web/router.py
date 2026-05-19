@@ -89,6 +89,13 @@ async def get_login(request: Request, session: AsyncSession = Depends(get_db)):
         
     return FileResponse(site_dir / "login.html")
 
+
+@router.get("/login")
+@router.get("/login.html")
+async def get_login_alias(request: Request, session: AsyncSession = Depends(get_db)):
+    return await get_login(request, session)
+
+
 @router.get("/index")
 @router.get("/bottle-iframe")
 @router.get("/index.html")

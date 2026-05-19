@@ -14,11 +14,29 @@ _TEMPLATE: dict[str, Any] | None = None
 # O'yin klienti signed_request=fb (va tg) orqali ulanadi
 _WS_PLATFORMS = ("fb", "tg", "ok", "as", "gg", "ma", "vk", "mm", "ya", "fbig", "fb-ig")
 
+PRODUCTION_DOMAIN = "spinthebottletg.com"
+DEFAULT_PUBLIC_URL = f"https://{PRODUCTION_DOMAIN}"
+
+
+def _ensure_https(url: str) -> str:
+    u = (url or "").strip().rstrip("/")
+    if not u:
+        return DEFAULT_PUBLIC_URL
+    if not u.startswith("http://") and not u.startswith("https://"):
+        u = "https://" + u
+    if u.startswith("http://"):
+        u = "https://" + u[7:]
+    return u
+
 
 def public_base_url(request: Request, settings=None) -> str:
+    """Production: TELEGRAM_WEBAPP_URL (https://spinthebottletg.com) ustun."""
     env_url = ""
     if settings and getattr(settings, "telegram_webapp_url", ""):
         env_url = settings.telegram_webapp_url.strip().rstrip("/")
+
+    if env_url:
+        return _ensure_https(env_url)
 
     proto = (request.headers.get("x-forwarded-proto") or request.url.scheme or "https").split(",")[0].strip()
     host = (
@@ -27,15 +45,15 @@ def public_base_url(request: Request, settings=None) -> str:
         or request.url.netloc
     )
     if host:
-        host = host.split(",")[0].strip()
+        host = host.split(",")[0].strip().split(":")[0]
+        if host in (PRODUCTION_DOMAIN, f"www.{PRODUCTION_DOMAIN}"):
+            return DEFAULT_PUBLIC_URL
+        if "localhost" in host or host == "127.0.0.1":
+            return DEFAULT_PUBLIC_URL
         base = f"{proto}://{host}".rstrip("/")
-        # Tunnel orqali kelganda ham ba'zan localhost ko'rinadi — .env dagi URL ustun
-        if env_url and ("localhost" in base or "127.0.0.1" in base):
-            return env_url
-        return base
-    if env_url:
-        return env_url
-    return str(request.base_url).rstrip("/")
+        return _ensure_https(base)
+
+    return DEFAULT_PUBLIC_URL
 
 
 def _ws_url(base: str) -> str:
@@ -79,6 +97,7 @@ def build_server_json(request: Request, settings=None) -> dict[str, Any]:
         if isinstance(block, dict):
             block["server"] = host_only
             block["server_v2"] = [ws]
+            block["port"] = 443 if base.startswith("https://") else block.get("port", 443)
             block["youtube"] = f"{base}/"
             block["youtube_v2"] = [f"{base}/"]
             block["music"] = f"{base}/api_music"

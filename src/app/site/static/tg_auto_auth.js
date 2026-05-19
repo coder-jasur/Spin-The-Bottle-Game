@@ -4,6 +4,14 @@
 (function (global) {
     "use strict";
 
+    try {
+        var legacyGm = global.localStorage.getItem("gm_coin");
+        if (legacyGm !== null && global.localStorage.getItem("stars_coin") === null) {
+            global.localStorage.setItem("stars_coin", legacyGm);
+        }
+        global.localStorage.removeItem("gm_coin");
+    } catch (e) { /* ignore */ }
+
     var SUPPORTED_LANGS = { uz: 1, ru: 1, en: 1, tr: 1, az: 1, tj: 1, kz: 1 };
     var LANG_ALIASES = { kk: "kz", tg: "tj", kaz: "kz", tjk: "tj" };
     var DEFAULT_LANG = "ru";
@@ -234,7 +242,7 @@
             global.localStorage.setItem("display_name", displayName);
             if (u.login) global.localStorage.setItem("login", u.login);
             global.localStorage.setItem("gender", u.gender || "male");
-            global.localStorage.setItem("gm_coin", String(u.gm_coin != null ? u.gm_coin : 0));
+            global.localStorage.setItem("stars_coin", String(u.gm_coin != null ? u.gm_coin : 0));
             global.localStorage.setItem("balance", String(u.stars != null ? u.stars : 0));
             global.localStorage.setItem("profile_picture", u.profile_picture || "/photos/no_img.png");
             if (u.is_admin !== undefined) {

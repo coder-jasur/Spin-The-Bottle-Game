@@ -84,7 +84,9 @@ def load_config() -> Settings:
         ),
         telegram_webhook_secret=env.str("TELEGRAM_WEBHOOK_SECRET", ""),
         telegram_use_polling=env.bool("TELEGRAM_USE_POLLING", True),
-        telegram_webapp_url=env.str("TELEGRAM_WEBAPP_URL", "").strip().rstrip("/"),
+        telegram_webapp_url=env.str(
+            "TELEGRAM_WEBAPP_URL", "https://spinthebottletg.com"
+        ).strip().rstrip("/"),
         telegram_stars_banner_file_id=env.str(
             "TELEGRAM_STARS_BANNER_FILE_ID", ""
         ).strip(),
@@ -99,6 +101,10 @@ def load_config() -> Settings:
             "SCHEDULED_BACKUP_INTERVAL_HOURS", 24.0
         ),
         rate_limit_enabled=env.bool("RATE_LIMIT_ENABLED", True),
-        trusted_hosts=env.str("TRUSTED_HOSTS", "*").strip() or "*",
+        trusted_hosts=env.str(
+            "TRUSTED_HOSTS",
+            "spinthebottletg.com,www.spinthebottletg.com,localhost,127.0.0.1",
+        ).strip()
+        or "spinthebottletg.com,www.spinthebottletg.com",
         ws_max_messages_per_10s=env.int("WS_MAX_MESSAGES_PER_10S", 80),
     )

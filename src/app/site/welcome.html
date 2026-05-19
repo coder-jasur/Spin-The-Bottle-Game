@@ -20,7 +20,7 @@
     <meta property="og:description"
         content="Join the live gaming platform with Mafia, Domino, Spin the Bottle and social interaction!" />
     <meta property="og:image" content="./images/logo.png" />
-    <meta property="og:url" content="" />
+    <meta property="og:url" content="https://spinthebottletg.com/welcome" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Live Gaming Platform" />
@@ -199,7 +199,18 @@
             setTimeout(checkAdmin, 2000);
         })();
     </script>
-    <script defer="defer" src="./static/js/main.be3d9225.js?v=12"></script>
+    <script>
+        (function () {
+            try {
+                var legacy = localStorage.getItem("gm_coin");
+                if (legacy !== null && localStorage.getItem("stars_coin") === null) {
+                    localStorage.setItem("stars_coin", legacy);
+                }
+                localStorage.removeItem("gm_coin");
+            } catch (e) { }
+        })();
+    </script>
+    <script defer="defer" src="./static/js/main.be3d9225.js?v=13"></script>
     <link href="./static/css/main.a32329e6.css?v=7" rel="stylesheet">
 </head>
 

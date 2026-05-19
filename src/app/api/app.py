@@ -215,6 +215,20 @@ async def startup_application(
         except Exception as e:
             print(f"[WARN] Telegram bot ishga tushmadi: {e}", flush=True)
 
+    _site_root = pathlib.Path(__file__).resolve().parent.parent / "site"
+    for page, route in (
+        ("login.html", "/"),
+        ("index.html", "/index"),
+        ("welcome.html", "/welcome"),
+        ("admin.html", "/admin"),
+    ):
+        if (_site_root / page).is_file():
+            print(f"[OK] Sayt: {route} ({page})", flush=True)
+        else:
+            print(f"[WARN] Sayt topilmadi: {page} → {route}", flush=True)
+    if (_site_root / "server.json").is_file():
+        print("[OK] Sayt: /server.json", flush=True)
+
     app.state.bootstrapped = True
     print("[OK] Database ulandi, jadvallar va xonalar tayyor.", flush=True)
 
@@ -351,7 +365,7 @@ sfx_path = bottle_bundle_dir / "sfx"
 if sfx_path.exists():
     app.mount("/sfx", StaticFiles(directory=str(sfx_path)), name="sfx")
 
-for folder in ["static", "libs", "assets", "favicon"]:
+for folder in ["static", "libs", "assets", "favicon", "data"]:
     path = site_dir / folder
     if path.exists():
         app.mount(f"/{folder}", StaticFiles(directory=str(path)), name=folder)

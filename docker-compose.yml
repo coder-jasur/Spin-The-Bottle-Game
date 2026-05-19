@@ -1,12 +1,19 @@
 # SpinTheBottle — Docker Compose
 # Domen: https://spinthebottletg.com
 #
-#   cp .env.example .env
+#   cp .env.example .env   # BOT_TOKEN, SECRET_KEY, POSTGRES_PASSWORD, ...
 #   docker compose up -d --build
 #
-# Faqat lokal test (nginx siz, :8000):
+# Saytlar `bot` konteynerida (FastAPI static) — nginx :80 orqali:
+#   /              login
+#   /index         o'yin (Mini App)
+#   /welcome       lobi
+#   /admin         admin panel
+#   /server.json   WS/API URL (joriy domen)
+#
+# Lokal test (nginx siz, to'g'ridan :8000):
 #   docker compose up -d --build bot postgres redis api nginx-files
-#   # bot ports qatorini oching (quyida)
+#   # bot ports qatorini oching (quyida) → http://localhost:8000/
 
 name: spinthebottle
 
@@ -117,8 +124,13 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+      # Origin SSL (Let's Encrypt): "443:443" va app-ssl.conf mount qiling
+      # - "443:443"
     volumes:
       - ./docker/nginx/app.conf:/etc/nginx/conf.d/default.conf:ro
+      # - ./docker/nginx/app-ssl.conf:/etc/nginx/conf.d/app-ssl.conf:ro
+      # - /etc/letsencrypt:/etc/letsencrypt:ro
+      # - ./certbot/www:/var/www/certbot:ro
     networks:
       - app
     depends_on:

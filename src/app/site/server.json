@@ -1,14 +1,14 @@
 {
     "assets": {
         "url": "./assets.json?v=10",
-        "images_url": "http://localhost:8000/",
-        "images_url_v2": "http://localhost:8000/${width}/${name}.png",
+        "images_url": "https://spinthebottletg.com/",
+        "images_url_v2": "https://spinthebottletg.com/${width}/${name}.png",
         "images_url_v3": {
-            "png": "http://localhost:8000/${width}/${name}.png",
-            "webp": "http://localhost:8000/${width}/${name}.webp"
+            "png": "https://spinthebottletg.com/${width}/${name}.png",
+            "webp": "https://spinthebottletg.com/${width}/${name}.webp"
         },
         "images_url_v4": {
-            "png": "http://localhost:8000/${width}x${height}/${name}.png"
+            "png": "https://spinthebottletg.com/${width}x${height}/${name}.png"
         },
         "media_url": "/media/",
         "media_url_v2": "/media/${name}?2",
@@ -78,102 +78,102 @@
         }
     },
     "fb": {
-        "server": "localhost",
-        "server_v2": ["ws://localhost:8000/ws/"],
-        "port": 8000,
-        "music": "http://localhost:8000/api_music",
-        "music_v2": ["http://localhost:8000/api_music"],
-        "youtube": "http://localhost:8000/",
-        "youtube_v2": ["http://localhost:8000/"]
+        "server": "spinthebottletg.com",
+        "server_v2": ["wss://spinthebottletg.com/ws/"],
+        "port": 443,
+        "music": "https://spinthebottletg.com/api_music",
+        "music_v2": ["https://spinthebottletg.com/api_music"],
+        "youtube": "https://spinthebottletg.com/",
+        "youtube_v2": ["https://spinthebottletg.com/"]
     },
     "tg": {
-        "server": "localhost",
-        "server_v2": ["ws://localhost:8000/ws/"],
-        "port": 8000,
-        "music": "http://localhost:8000/api_music",
-        "music_v2": ["http://localhost:8000/api_music"],
-        "youtube": "http://localhost:8000/",
-        "youtube_v2": ["http://localhost:8000/"]
+        "server": "spinthebottletg.com",
+        "server_v2": ["wss://spinthebottletg.com/ws/"],
+        "port": 443,
+        "music": "https://spinthebottletg.com/api_music",
+        "music_v2": ["https://spinthebottletg.com/api_music"],
+        "youtube": "https://spinthebottletg.com/",
+        "youtube_v2": ["https://spinthebottletg.com/"]
     },
     "ok": {
-        "server": "localhost",
-        "server_v2": ["ws://localhost:8000/ws/"],
-        "port": 8000,
-        "music": "http://localhost:8000/api_music",
-        "music_v2": ["http://localhost:8000/api_music"],
-        "youtube": "http://localhost:8000/",
-        "youtube_v2": ["http://localhost:8000/"]
+        "server": "spinthebottletg.com",
+        "server_v2": ["wss://spinthebottletg.com/ws/"],
+        "port": 443,
+        "music": "https://spinthebottletg.com/api_music",
+        "music_v2": ["https://spinthebottletg.com/api_music"],
+        "youtube": "https://spinthebottletg.com/",
+        "youtube_v2": ["https://spinthebottletg.com/"]
     },
     "as": {
-        "server": "localhost",
-        "server_v2": ["ws://localhost:8000/ws/"],
-        "port": 8000,
-        "music": "http://localhost:8000/api_music",
-        "music_v2": ["http://localhost:8000/api_music"],
-        "youtube": "http://localhost:8000/",
-        "youtube_v2": ["http://localhost:8000/"]
+        "server": "spinthebottletg.com",
+        "server_v2": ["wss://spinthebottletg.com/ws/"],
+        "port": 443,
+        "music": "https://spinthebottletg.com/api_music",
+        "music_v2": ["https://spinthebottletg.com/api_music"],
+        "youtube": "https://spinthebottletg.com/",
+        "youtube_v2": ["https://spinthebottletg.com/"]
     },
     "gg": {
-        "server": "localhost",
-        "server_v2": ["ws://localhost:8000/ws/"],
-        "port": 8000,
-        "music": "http://localhost:8000/api_music",
-        "music_v2": ["http://localhost:8000/api_music"],
-        "youtube": "http://localhost:8000/",
-        "youtube_v2": ["http://localhost:8000/"]
+        "server": "spinthebottletg.com",
+        "server_v2": ["wss://spinthebottletg.com/ws/"],
+        "port": 443,
+        "music": "https://spinthebottletg.com/api_music",
+        "music_v2": ["https://spinthebottletg.com/api_music"],
+        "youtube": "https://spinthebottletg.com/",
+        "youtube_v2": ["https://spinthebottletg.com/"]
     },
     "ma": {
-        "server": "localhost",
-        "server_v2": ["ws://localhost:8000/ws/"],
-        "port": 8000,
-        "music": "http://localhost:8000/api_music",
-        "music_v2": ["http://localhost:8000/api_music"],
-        "youtube": "http://localhost:8000/",
-        "youtube_v2": ["http://localhost:8000/"]
+        "server": "spinthebottletg.com",
+        "server_v2": ["wss://spinthebottletg.com/ws/"],
+        "port": 443,
+        "music": "https://spinthebottletg.com/api_music",
+        "music_v2": ["https://spinthebottletg.com/api_music"],
+        "youtube": "https://spinthebottletg.com/",
+        "youtube_v2": ["https://spinthebottletg.com/"]
     },
     "vk": {
-        "server": "localhost",
-        "server_v2": ["ws://localhost:8000/ws/"],
-        "port": 8000,
-        "music": "http://localhost:8000/api_music",
-        "music_v2": ["http://localhost:8000/api_music"],
-        "youtube": "http://localhost:8000/",
-        "youtube_v2": ["http://localhost:8000/"]
+        "server": "spinthebottletg.com",
+        "server_v2": ["wss://spinthebottletg.com/ws/"],
+        "port": 443,
+        "music": "https://spinthebottletg.com/api_music",
+        "music_v2": ["https://spinthebottletg.com/api_music"],
+        "youtube": "https://spinthebottletg.com/",
+        "youtube_v2": ["https://spinthebottletg.com/"]
     },
     "mm": {
-        "server": "localhost",
-        "server_v2": ["ws://localhost:8000/ws/"],
-        "port": 8000,
-        "music": "http://localhost:8000/api_music",
-        "music_v2": ["http://localhost:8000/api_music"],
-        "youtube": "http://localhost:8000/",
-        "youtube_v2": ["http://localhost:8000/"]
+        "server": "spinthebottletg.com",
+        "server_v2": ["wss://spinthebottletg.com/ws/"],
+        "port": 443,
+        "music": "https://spinthebottletg.com/api_music",
+        "music_v2": ["https://spinthebottletg.com/api_music"],
+        "youtube": "https://spinthebottletg.com/",
+        "youtube_v2": ["https://spinthebottletg.com/"]
     },
     "ya": {
-        "server": "localhost",
-        "server_v2": ["ws://localhost:8000/ws/"],
-        "port": 8000,
-        "music": "http://localhost:8000/api_music",
-        "music_v2": ["http://localhost:8000/api_music"],
-        "youtube": "http://localhost:8000/",
-        "youtube_v2": ["http://localhost:8000/"]
+        "server": "spinthebottletg.com",
+        "server_v2": ["wss://spinthebottletg.com/ws/"],
+        "port": 443,
+        "music": "https://spinthebottletg.com/api_music",
+        "music_v2": ["https://spinthebottletg.com/api_music"],
+        "youtube": "https://spinthebottletg.com/",
+        "youtube_v2": ["https://spinthebottletg.com/"]
     },
     "fbig": {
-        "server": "localhost",
-        "server_v2": ["ws://localhost:8000/ws/"],
-        "port": 8000,
-        "music": "http://localhost:8000/api_music",
-        "music_v2": ["http://localhost:8000/api_music"],
-        "youtube": "http://localhost:8000/",
-        "youtube_v2": ["http://localhost:8000/"]
+        "server": "spinthebottletg.com",
+        "server_v2": ["wss://spinthebottletg.com/ws/"],
+        "port": 443,
+        "music": "https://spinthebottletg.com/api_music",
+        "music_v2": ["https://spinthebottletg.com/api_music"],
+        "youtube": "https://spinthebottletg.com/",
+        "youtube_v2": ["https://spinthebottletg.com/"]
     },
     "fb-ig": {
-        "server": "localhost",
-        "server_v2": ["ws://localhost:8000/ws/"],
-        "port": 8000,
-        "music": "http://localhost:8000/api_music",
-        "music_v2": ["http://localhost:8000/api_music"],
-        "youtube": "http://localhost:8000/",
-        "youtube_v2": ["http://localhost:8000/"]
+        "server": "spinthebottletg.com",
+        "server_v2": ["wss://spinthebottletg.com/ws/"],
+        "port": 443,
+        "music": "https://spinthebottletg.com/api_music",
+        "music_v2": ["https://spinthebottletg.com/api_music"],
+        "youtube": "https://spinthebottletg.com/",
+        "youtube_v2": ["https://spinthebottletg.com/"]
     }
 }
