@@ -298,6 +298,16 @@ class GameManager:
             return f"Bu stoldan haydalgansiz. {m} daqiqadan keyin qayta kirishingiz mumkin."
         return f"Bu stoldan haydalgansiz. {remain} soniyadan keyin qayta kirishingiz mumkin."
 
+    async def _increment_harem_courts_received(self, target: Player) -> int:
+        """Target necha marta uxajorlik olgan — reyting «2 yurak»."""
+        new_val = int(getattr(target, "harem_courts_received", 0) or 0) + 1
+        target.harem_courts_received = new_val
+        if target.db_id:
+            await self._db_update_user(
+                int(target.db_id), harem_courts_received=new_val
+            )
+        return new_val
+
     def register_kick_reentry_ban(self, table_id: str, target: Player) -> None:
         """Haydashdan keyin shu stolga vaqtincha kirish taqiqi (KICK_REENTRY_BAN_MS)."""
         if KICK_REENTRY_BAN_MS <= 0:
@@ -3904,6 +3914,7 @@ class GameManager:
 
         target.harem_owner_id = buyer_db
         target.harem_price = int(target.harem_price) + 1
+        await self._increment_harem_courts_received(target)
 
         if target.db_id:
             await self._db_update_user(
@@ -4309,6 +4320,9 @@ class GameManager:
                 if live_target:
                     live_target.harem_owner_id = new_owner
                     live_target.harem_price = new_price
+                    await self._increment_harem_courts_received(live_target)
+                elif target_for_extra:
+                    await self._increment_harem_courts_received(target_for_extra)
                 if target_db_id:
                     await self._db_update_user(
                         target_db_id,
@@ -4850,6 +4864,9 @@ class GameManager:
                 payload["gestures_rank"] = rk
                 rk, _ = await repo.get_user_rank_by_column(db_id, "harem_price")
                 payload["price_rank"] = rk
+                rk, _ = await repo.get_user_rank_by_column(
+                    db_id, "harem_courts_received"
+                )
                 payload["harem_price_rank"] = rk
 
                 ach = await repo.get_user_achievements(db_id)
@@ -5900,6 +5917,9 @@ class GameManager:
                 if db_u:
                     p.harem_owner_id = int(db_u.harem_owner_id or 0)
                     p.harem_price = int(db_u.harem_price or 1)
+                    p.harem_courts_received = int(
+                        getattr(db_u, "harem_courts_received", 0) or 0
+                    )
                     # Profil zodiak: klient `birthday_ts` dan hisoblaydi — DB bilan sinxron
                     p.birthday_ts = parse_birth_date_ms(
                         getattr(db_u, "birth_date", None)
@@ -6062,11 +6082,11 @@ class GameManager:
     _LEGACY_TOPS_COL_MAP = {
         "total_kisses": "kisses",
         "dj_score": "dj",
-        "harem_price": "harem_price",
+        # «Самые влиятельные» — necha marta uxajorlik olgan
+        "harem_price": "harem_courts_received",
         # «Emotsiyalar» reytingi — faqat users.emotion (game_gesture +1)
         "gestures": "emotion",
-        # «Самые дорогие» — faqat uxajor narxi (DB users.harem_price).
-        # expense (sovg'a xarajati) bu reytingga kirmaydi.
+        # «Самые дорогие» — joriy uxajor narxi (users.harem_price)
         "price": "harem_price",
         # Eski (UserStats) atashlar — backward compatibility uchun
         "kisses": "kisses",

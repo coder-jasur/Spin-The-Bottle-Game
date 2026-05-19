@@ -160,6 +160,7 @@ class Player:
         self.items: dict    = dict(DEFAULT_USER_ITEMS)
         self.harem_owner_id: int = 0
         self.harem_price: int    = 1
+        self.harem_courts_received: int = 0
         self.compliments_sent: int = 0
         # Bank komplimentlari uchun sikl (0..COMPLIMENTS_TO_REWARD); yutuq — umumiy
         self.compliments_lifetime: int = 0
@@ -379,6 +380,9 @@ class Player:
         # Uxajivat ma'lumotlari (DB dan)
         p.harem_owner_id = getattr(db_user, "harem_owner_id", 0) or 0
         p.harem_price    = getattr(db_user, "harem_price", 1) or 1
+        p.harem_courts_received = int(
+            getattr(db_user, "harem_courts_received", 0) or 0
+        )
         p.friends_privacy = getattr(db_user, "friends_privacy", None) or "everyone"
         p.invited_guests = int(getattr(db_user, "invited_guests", 0) or 0)
         p.kickout_streak_count = int(getattr(db_user, "kickout_streak_count", 0) or 0)

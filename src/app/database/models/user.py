@@ -116,6 +116,10 @@ class User(Base):
     # 🧡 Court (Uxajivat)
     harem_owner_id: Mapped[int | None] = mapped_column(BigInteger, server_default="0", nullable=True)
     harem_price: Mapped[int] = mapped_column(Integer, server_default="1", nullable=False)
+    # Necha marta uxajorlik olgan (reyting «2 yurak»)
+    harem_courts_received: Mapped[int] = mapped_column(
+        BigInteger, server_default="0", nullable=False
+    )
 
     # 👢 Kickout (stoldan haydash) — har bir foydalanuvchi uchun alohida; 30 daqiqa tepmasa zanjir 0 ga tushadi
     kickout_streak_count: Mapped[int] = mapped_column(

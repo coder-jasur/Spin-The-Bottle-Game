@@ -20,6 +20,15 @@ _SCHEMA_PATCHES: tuple[str, ...] = (
     ADD COLUMN IF NOT EXISTS gift_love_stock INTEGER NOT NULL DEFAULT 0
     """,
     """
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS harem_courts_received BIGINT NOT NULL DEFAULT 0
+    """,
+    """
+    UPDATE users
+    SET harem_courts_received = GREATEST(harem_price - 1, 0)
+    WHERE harem_courts_received = 0 AND harem_price > 1
+    """,
+    """
     CREATE TABLE IF NOT EXISTS user_music_folders (
         user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         folder TEXT NOT NULL,
