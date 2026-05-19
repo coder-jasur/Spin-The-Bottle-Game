@@ -16,15 +16,10 @@ def build_game_index_path(
     language_code: str | None = None,
     telegram_language_code: str | None = None,
 ) -> str:
-    from src.app.api.config.server_json import public_base_url
-    from src.app.core.config import load_config
-
     session_token = game_sessions.create(user_db_id)
-    settings = getattr(request.app.state, "settings", None) or load_config()
-    base = public_base_url(request, settings)
-    exit_url = f"{base}/exit-game"
+    # Nisbiy yo'l — `back` query ichida to'liq https URL bo'lmasin (double-encode xatosi)
     back_with_session = (
-        f"{exit_url}?{urllib.parse.urlencode({'user_id': session_token})}"
+        f"/exit-game?{urllib.parse.urlencode({'user_id': session_token})}"
     )
     client_lang = resolve_user_lang(
         telegram_language_code=telegram_language_code,

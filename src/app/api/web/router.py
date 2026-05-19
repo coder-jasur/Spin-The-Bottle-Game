@@ -26,7 +26,19 @@ def _auth_payload_from_request(request: Request) -> Optional[dict]:
     raw_list: list[str] = []
     q = request.query_params.get("user_id")
     if q and str(q).strip():
-        raw_list.append(str(q).strip())
+        q = str(q).strip()
+        raw_list.append(q)
+        # Ba'zan `back` orqali kelganda token bir-ikki marta encode bo'ladi
+        for _ in range(2):
+            try:
+                dec = urllib.parse.unquote(q)
+            except Exception:
+                break
+            if dec == q or not dec:
+                break
+            q = dec
+            if dec not in raw_list:
+                raw_list.append(dec)
     for ck in ("device_user_ids", "accessToken"):
         v = request.cookies.get(ck)
         if v and str(v).strip():
@@ -186,13 +198,13 @@ async def get_welcome(request: Request, session: AsyncSession = Depends(get_db))
 
 @router.get("/exit-game")
 async def exit_game(request: Request):
+    """O'yindan chiqish — `back` parametridagi sessiya tokeni bilan /welcome."""
     payload = _auth_payload_from_request(request)
 
     if not payload:
-        return RedirectResponse(url="/")
+        return RedirectResponse(url="/", status_code=302)
 
-    # O'yindan chiqish: yana /index emas — lobi (aks holda cookie bilan darhol o'yin qayta ochiladi)
-    return RedirectResponse(url="/welcome")
+    return RedirectResponse(url="/welcome", status_code=302)
 
 @router.get("/site.webmanifest")
 async def get_manifest():

@@ -10,6 +10,7 @@ wheels/
 .venv
 
 .env
+
 .env.ytdlp.example
 
 # Local cache (game session persistence, smoke-test workspace)

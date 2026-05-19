@@ -124,6 +124,7 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+      - "443:443"
       # Origin SSL (Let's Encrypt): "443:443" va app-ssl.conf mount qiling
       # - "443:443"
     volumes:
