@@ -908,7 +908,7 @@ async def convert_jeton(
     request: Request,
     session: AsyncSession = Depends(get_db),
 ):
-    """GM (stars_coin) → gift_tokens. Klient `success` + `data` kutadi."""
+    """Gold (hearts) → gift_tokens. Klient `success` + `data` kutadi."""
     from src.app.database.repositories.game import GameRepository
     from src.app.api.ws.constants import HEARTS_PACKAGES
 
@@ -930,7 +930,7 @@ async def convert_jeton(
 
     repo = GameRepository(session)
     await repo.ensure_wallet(user_id)
-    ok, new_sc, new_gt = await repo.convert_stars_coin_to_gift_tokens(
+    ok, new_hearts, new_gt, new_sc = await repo.convert_hearts_to_gift_tokens(
         user_id, amount, jeton_delta
     )
     if not ok:
@@ -938,7 +938,7 @@ async def convert_jeton(
             status_code=400,
             content={
                 "success": False,
-                "error": f"Yetarli Stars. Sizda: {new_sc}",
+                "error": f"Yetarli gold. Sizda: {new_hearts}",
                 "data": {},
             },
         )
@@ -948,6 +948,7 @@ async def convert_jeton(
         "data": {
             "STARS_coin": new_sc,
             "gift_tokens": new_gt,
+            "hearts": new_hearts,
             "converted_from": amount,
             "converted_to": jeton_delta,
         },
@@ -982,7 +983,7 @@ async def frames_convert_stars_to_hearts(
 
     repo = GameRepository(session)
     await repo.ensure_wallet(user_id)
-    ok, new_sc, new_gt, _ = await repo.purchase_hearts_with_gift_tokens(
+    ok, new_hearts, new_gt, new_sc = await repo.convert_gift_tokens_to_hearts(
         user_id, amount, hearts_delta
     )
     if not ok:
@@ -990,21 +991,19 @@ async def frames_convert_stars_to_hearts(
             status_code=400,
             content={
                 "success": False,
-                "error": f"Yetarli Stars yo'q. Sizda: {int(new_sc or 0)}",
+                "error": f"Yetarli gift token. Sizda: {int(new_gt or 0)}",
                 "data": {},
             },
         )
 
-    w = await repo.get_wallet(user_id)
-    gm = int(w.stars_coin or 0) if w else 0
-    gt = int(w.gift_tokens or 0) if w else 0
-
     return {
         "success": True,
         "data": {
-            "STARS_coin": gm,
-            "balance": gt,
-            "tokens": gm,
+            "STARS_coin": new_sc,
+            "balance": new_gt,
+            "gift_tokens": new_gt,
+            "hearts": new_hearts,
+            "tokens": new_sc,
             "converted_from": amount,
             "converted_to": hearts_delta,
         },

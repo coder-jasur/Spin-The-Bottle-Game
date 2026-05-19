@@ -353,6 +353,25 @@ class GameRepository:
         await self.session.commit()
         return True, new_sc, new_gt, new_hearts
 
+    async def add_stars_coin(
+        self,
+        user_id: int,
+        amount: int,
+        tx_type: str,
+        description: str = "",
+    ) -> int:
+        stmt = (
+            update(Wallet)
+            .where(Wallet.user_id == user_id)
+            .values(stars_coin=Wallet.stars_coin + amount)
+            .returning(Wallet.stars_coin)
+        )
+        result = await self.session.execute(stmt)
+        new_balance = int(result.scalar_one_or_none() or 0)
+        await self._save_tx(user_id, amount, "stars_coin", tx_type, description)
+        await self.session.commit()
+        return new_balance
+
     async def add_gift_tokens(self, user_id: int, amount: int,
                               tx_type: str, description: str = "") -> int:
         stmt = (
@@ -366,6 +385,100 @@ class GameRepository:
         await self._save_tx(user_id, amount, "gift_tokens", tx_type, description)
         await self.session.commit()
         return new_balance
+
+    async def convert_hearts_to_gift_tokens(
+        self,
+        user_id: int,
+        heart_cost: int,
+        tokens_delta: int,
+    ) -> tuple[bool, int, int, int]:
+        """
+        Gold (hearts) → gift_tokens (jeton).
+        (ok, yangi_hearts, yangi_gift_tokens, yangi_stars_coin).
+        """
+        wallet = await self.get_wallet(user_id)
+        if not wallet:
+            return False, 0, 0, 0
+
+        hearts = int(wallet.hearts or 0)
+        if hearts < heart_cost:
+            return (
+                False,
+                hearts,
+                int(wallet.gift_tokens or 0),
+                int(wallet.stars_coin or 0),
+            )
+
+        new_hearts = hearts - heart_cost
+        new_gt = int(wallet.gift_tokens or 0) + tokens_delta
+        new_sc = int(wallet.stars_coin or 0)
+
+        await self.session.execute(
+            update(Wallet)
+            .where(Wallet.user_id == user_id)
+            .values(hearts=new_hearts, gift_tokens=new_gt)
+        )
+        await self._save_tx(
+            user_id, -heart_cost, "hearts", "hearts_to_gift_tokens", f"cost:{heart_cost}"
+        )
+        await self._save_tx(
+            user_id,
+            tokens_delta,
+            "gift_tokens",
+            "hearts_to_gift_tokens",
+            f"gt+:{tokens_delta}",
+        )
+        await self.session.commit()
+        return True, new_hearts, new_gt, new_sc
+
+    async def convert_gift_tokens_to_hearts(
+        self,
+        user_id: int,
+        gift_token_cost: int,
+        hearts_delta: int,
+    ) -> tuple[bool, int, int, int]:
+        """
+        gift_tokens (jeton) → hearts.
+        (ok, yangi_hearts, yangi_gift_tokens, yangi_stars_coin).
+        """
+        wallet = await self.get_wallet(user_id)
+        if not wallet:
+            return False, 0, 0, 0
+
+        gt = int(wallet.gift_tokens or 0)
+        if gt < gift_token_cost:
+            return (
+                False,
+                int(wallet.hearts or 0),
+                gt,
+                int(wallet.stars_coin or 0),
+            )
+
+        new_gt = gt - gift_token_cost
+        new_hearts = int(wallet.hearts or 0) + hearts_delta
+        new_sc = int(wallet.stars_coin or 0)
+
+        await self.session.execute(
+            update(Wallet)
+            .where(Wallet.user_id == user_id)
+            .values(hearts=new_hearts, gift_tokens=new_gt)
+        )
+        await self._save_tx(
+            user_id,
+            -gift_token_cost,
+            "gift_tokens",
+            "gift_tokens_to_hearts",
+            f"cost:{gift_token_cost}",
+        )
+        await self._save_tx(
+            user_id,
+            hearts_delta,
+            "hearts",
+            "gift_tokens_to_hearts",
+            f"hearts+:{hearts_delta}",
+        )
+        await self.session.commit()
+        return True, new_hearts, new_gt, new_sc
 
     async def spend_gift_tokens(self, user_id: int, amount: int,
                                 tx_type: str, description: str = "") -> tuple[bool, int]:

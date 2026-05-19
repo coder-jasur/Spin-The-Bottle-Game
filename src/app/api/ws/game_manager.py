@@ -1889,7 +1889,7 @@ class GameManager:
                 and player.db_id
                 and not getattr(player, "is_admin", False)
             ):
-                player.gift_tokens = int(player.gift_tokens or 0) + bonus_stars
+                player.stars_coin = int(player.stars_coin or 0) + bonus_stars
                 player.sync_token_display()
                 asyncio.create_task(
                     self._db_add_stars(player.db_id, bonus_stars, "daily_vip_bonus")
@@ -6237,7 +6237,7 @@ class GameManager:
         if getattr(player, "is_admin", False):
             self._admin_floor_wallet(player)
         else:
-            player.gift_tokens = int(player.gift_tokens or 0) + 10
+            player.stars_coin = int(player.stars_coin or 0) + 10
             player.sync_token_display()
             if player.db_id:
                 asyncio.create_task(self._db_add_stars(player.db_id, 10, "vip_tokens"))
@@ -6258,9 +6258,9 @@ class GameManager:
             return
         try:
             async with self._db() as repo:
-                await repo.add_gift_tokens(db_id, amount, tx_type)
+                await repo.add_stars_coin(db_id, amount, tx_type)
         except Exception as e:
-            log.error(f"Gift tokens add DB xatosi: {e}")
+            log.error(f"Stars coin add DB xatosi: {e}")
 
     # ════════════════════════════════════════════════════════════════════════
     # SOTIB OLISH
@@ -6496,7 +6496,7 @@ class GameManager:
         )
 
     async def _handle_gold2tokens(self, player: Player, data: dict):
-        """gold → stars (tokens). Klient allaqachon goldni kamaytirgan; server authoritative."""
+        """gold (hearts) → stars_coin (tokens). Klient goldni kamaytirgan; server authoritative."""
         gold = int(data.get("gold", 0) or 0)
         if gold <= 0:
             return
@@ -6529,7 +6529,7 @@ class GameManager:
                 },
             )
             return
-        player.gift_tokens = int(player.gift_tokens or 0) + tokens_inc
+        player.stars_coin = int(player.stars_coin or 0) + tokens_inc
         player.sync_token_display()
         if player.db_id:
             asyncio.create_task(
@@ -7068,6 +7068,7 @@ class GameManager:
         *,
         save_to_db: bool = True,
     ) -> None:
+        """Rabbit va h.k. — gift_tokens (jeton) qo'shish."""
         if amount <= 0:
             return
         if getattr(player, "is_admin", False):
@@ -7075,10 +7076,18 @@ class GameManager:
             await self._push_wallet_sync(player)
             return
         player.gift_tokens = int(player.gift_tokens or 0) + amount
-        player.sync_token_display()
         if save_to_db and player.db_id:
-            asyncio.create_task(self._db_add_stars(player.db_id, amount, tx_type))
+            asyncio.create_task(self._db_add_gift_tokens(player.db_id, amount, tx_type))
         await self._push_wallet_sync(player)
+
+    async def _db_add_gift_tokens(self, db_id: int, amount: int, tx_type: str) -> None:
+        if not db_id:
+            return
+        try:
+            async with self._db() as repo:
+                await repo.add_gift_tokens(db_id, amount, tx_type)
+        except Exception as e:
+            log.error(f"Gift tokens add DB xatosi: {e}")
 
     async def _handle_rabbit_gift_send(self, player: Player, data: dict) -> None:
         from src.app.api.ws.constants import (
