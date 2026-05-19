@@ -837,7 +837,7 @@ class GameManager:
             log.info(f"[-] {user_id} navbatdan chiqdi → table={table_id}")
             await self._broadcast_queue_positions(table_id)
             if table.player_count() == 0 and not self._table_queues.get(table_id):
-                del self.tables[table_id]
+                self.tables.pop(table_id, None)
             return
 
         player = table.get_player(user_id)
@@ -860,7 +860,7 @@ class GameManager:
             await self._promote_from_queue(table_id)
 
         if table.player_count() == 0 and not self._table_queues.get(table_id):
-            del self.tables[table_id]
+            self.tables.pop(table_id, None)
 
         log.info(f"[-] {user_id} → table={table_id}")
 
