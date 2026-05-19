@@ -3,10 +3,7 @@ from fastapi import APIRouter, Response
 from fastapi.responses import FileResponse
 from pathlib import Path
 
-from src.app.services.telegram_profile import (
-    _TG_PHOTO_PROXY_PREFIX,
-    local_avatar_is_valid,
-)
+from src.app.services.telegram_profile import local_avatar_is_valid
 
 router = APIRouter(tags=["Proxy"])
 
@@ -19,7 +16,6 @@ _PHOTOS_DIR = (
     Path(__file__).resolve().parents[2] / "site" / "media" / "photos"
 )
 _NO_IMG = _PHOTOS_DIR / "no_img.png"
-_REMOTE_PHOTOS = "https://bottle.tgspinbotlle.com/photos"
 
 
 def _no_img_response() -> FileResponse | Response:
@@ -57,7 +53,7 @@ async def proxy_photos(path: str):
             return FileResponse(local)
     if safe == "no_img.png":
         return _no_img_response()
-    return await proxy_request(f"{_REMOTE_PHOTOS}/{safe}")
+    return Response(status_code=404)
 
 
 @router.get("/api/proxy/tgphoto/{path:path}")
@@ -68,7 +64,6 @@ async def proxy_tg_photo(path: str):
         return Response(status_code=400)
 
     candidates = [
-        f"{_TG_PHOTO_PROXY_PREFIX}{safe}",
         f"https://t.me/{safe}",
     ]
     async with httpx.AsyncClient(follow_redirects=True, timeout=20.0) as client:

@@ -1,8 +1,14 @@
 from dataclasses import dataclass
+from pathlib import Path
+
 import environs
+from dotenv import load_dotenv
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(_PROJECT_ROOT / ".env")
 
 env = environs.Env()
-env.read_env()
+env.read_env(_PROJECT_ROOT / ".env")
 
 
 @dataclass
@@ -38,6 +44,10 @@ class Settings:
     # Har 24 soatda adminlarga DB backup (admin paneldagi kabi)
     scheduled_backup_enabled: bool = True
     scheduled_backup_interval_hours: float = 24.0
+    # Xavfsizlik
+    rate_limit_enabled: bool = True
+    trusted_hosts: str = "*"
+    ws_max_messages_per_10s: int = 80
 
     def construct_postgresql_url(self):
         postgresql_dsn = (
@@ -88,4 +98,7 @@ def load_config() -> Settings:
         scheduled_backup_interval_hours=env.float(
             "SCHEDULED_BACKUP_INTERVAL_HOURS", 24.0
         ),
+        rate_limit_enabled=env.bool("RATE_LIMIT_ENABLED", True),
+        trusted_hosts=env.str("TRUSTED_HOSTS", "*").strip() or "*",
+        ws_max_messages_per_10s=env.int("WS_MAX_MESSAGES_PER_10S", 80),
     )

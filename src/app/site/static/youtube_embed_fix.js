@@ -11,7 +11,7 @@
 
   if (!needsFix) return;
 
-  var EMBED_ORIGIN = "https://ciliz.com";
+  var EMBED_ORIGIN = "https://www.youtube.com";
 
   function patchYtPlayer() {
     if (!window.YT || !window.YT.Player || window.YT.Player.__originPatched) return false;

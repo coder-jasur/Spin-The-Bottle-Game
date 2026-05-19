@@ -1,9 +1,11 @@
 """Telegram bot va dispatcher sozlash."""
 from __future__ import annotations
 
+import logging
+
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
-from aiogram.exceptions import TelegramForbiddenError
+from aiogram.exceptions import TelegramForbiddenError, TelegramNetworkError
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import ErrorEvent
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -18,6 +20,8 @@ from src.app.bot.handlers.store import router as store_router
 from src.app.bot.middleware import register_middleware
 from src.app.bot.middleware.database_pool import DatabaseMiddleware
 from src.app.core.config import Settings
+
+log = logging.getLogger("spinbottle.bot")
 
 
 def create_bot_and_dispatcher(
@@ -53,6 +57,13 @@ def _register_error_handlers(dp: Dispatcher) -> None:
         elif upd.callback_query and upd.callback_query.message:
             chat_id = upd.callback_query.message.chat.id
         log_bot_blocked(chat_id, context="handler")
+        return True
+
+    @dp.errors()
+    async def _on_network_error(event: ErrorEvent) -> bool:
+        if not isinstance(event.exception, TelegramNetworkError):
+            return False
+        log.warning("TG tarmoq (handler): %s", event.exception)
         return True
 
 

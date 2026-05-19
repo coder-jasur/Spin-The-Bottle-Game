@@ -10,7 +10,19 @@ wheels/
 .venv
 
 .env
+.env.ytdlp.example
 
 # Local cache (game session persistence, smoke-test workspace)
 .cache/
 tmp/
+
+# Runtime logs
+logs/file/*.log
+logs/tunnel.err.log
+logs/tunnel.out.log
+logs/tunnel.url
+
+# Telegram yuklangan profil rasmlari (runtime)
+src/app/site/media/photos/user_*.jpg
+src/app/site/media/photos/user_*.webp
+src/app/site/media/photos/user_*.png

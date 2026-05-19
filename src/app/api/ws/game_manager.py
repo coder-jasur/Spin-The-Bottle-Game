@@ -15,7 +15,7 @@ import time
 from collections import deque
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import TYPE_CHECKING, Deque, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Deque, Dict, List, Optional, Tuple
 
 import jwt as pyjwt
 from fastapi import WebSocket
@@ -38,6 +38,8 @@ from src.app.api.ws.constants import (
     DRINK_TYPES,
     GESTURE_PRICES,
     GESTURE_TYPES,
+    GOLD2TOKENS_BY_GOLD,
+    GOLD2TOKENS_ITEMS,
     GIFT_PRICES,
     GIFT_LOVE_ITEM_ID,
     GIFT_LOVE_UNLIMITED_MIN,
@@ -747,6 +749,9 @@ class GameManager:
             dup.last_activity_ms = self._ts()
             dup._html5_ws_rebind = True
             self.ws_map[ws] = (table_id, dup.id)
+            # Eski RAM dagi g_love (masalan 478) DB dan yangilanmasin — har qayta ulanishda DB dan o'qiymiz
+            if dup.db_id:
+                await self._sync_gift_love_from_db(dup)
             log.info(
                 "DUPLICATE_DEVICE: db_id=%s table=%s — eski WS yopildi, yangi ulanish",
                 getattr(dup, "db_id", None),
@@ -812,6 +817,8 @@ class GameManager:
 
         self.ws_map[ws] = (table_id, user_id)
         player.last_activity_ms = self._ts()
+        if player.db_id:
+            await self._sync_gift_love_from_db(player)
         return player
 
     async def disconnect(self, ws: WebSocket):
@@ -1182,6 +1189,7 @@ class GameManager:
     async def _login_payload_with_friends(
         self, player: Player, table_id: str, ts: int
     ) -> dict:
+        await self._sync_gift_love_from_db(player)
         login_payload = player.to_login_payload(table_id, ts)
         recent_messages: list[dict] = []
         if self._db_factory and str(table_id).strip().isdigit():
@@ -1673,27 +1681,27 @@ class GameManager:
             player.status = str(data["status"])[:100]
             db_fields["status_text"] = player.status
 
+        from src.app.api.ws.profile_setup import (
+            compute_age_from_birth_date,
+            normalize_profile_age,
+        )
+
         if "birthday_full" in data:
             ts_ms = parse_birth_date_ms(str(data["birthday_full"]).strip())
             if ts_ms:
                 player.birthday_ts = ts_ms
                 d_birth = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).date()
                 db_fields["birth_date"] = d_birth.isoformat()
-                today = datetime.now(timezone.utc).date()
-                player.age = max(
-                    0,
-                    today.year
-                    - d_birth.year
-                    - ((today.month, today.day) < (d_birth.month, d_birth.day)),
-                )
-                db_fields["age"] = player.age
+                valid_age = compute_age_from_birth_date(d_birth.isoformat())
+                if valid_age is not None:
+                    player.age = valid_age
+                    db_fields["age"] = valid_age
 
         if "age" in data and "birthday_full" not in data:
-            try:
-                player.age = max(0, int(data["age"]))
-                db_fields["age"] = player.age
-            except (TypeError, ValueError):
-                pass
+            valid_age = normalize_profile_age(data.get("age"))
+            if valid_age is not None:
+                player.age = valid_age
+                db_fields["age"] = valid_age
 
         if db_fields:
             player.is_new = 0
@@ -1713,8 +1721,17 @@ class GameManager:
                 u = await repo.get_user_with_wallet(int(player.db_id))
             if not u:
                 return
-            if u.age is not None:
-                player.age = int(u.age) or 0
+            from src.app.api.ws.profile_setup import effective_profile_age
+
+            fixed_age = effective_profile_age(u)
+            player.age = fixed_age
+            if u.birth_date:
+                player.birthday_ts = parse_birth_date_ms(u.birth_date)
+            raw_age = int(u.age or 0)
+            if fixed_age > 0 and raw_age != fixed_age and (
+                raw_age <= 0 or raw_age >= 1000
+            ):
+                await self._db_update_user(int(player.db_id), age=fixed_age)
             player.gender = u.gender or "male"
             player.male = player.gender != "female"
         except Exception as e:
@@ -1783,6 +1800,7 @@ class GameManager:
                     "name": player.username or "",
                 },
             )
+            await self._push_items_sync(player)
             player.session_started = True
             log.info(
                 "PROFILE_SETUP: %s(%s) — yosh/jins dialogi",
@@ -1803,6 +1821,7 @@ class GameManager:
                 await self.send_to(player, login_payload)
             await self._send_game_queue(player, table_id)
             await self._push_wallet_sync(player)
+            await self._push_items_sync(player)
             player.session_started = True
             log.info(
                 "LOGIN QUEUE: %s table=%s pos=%s",
@@ -1871,6 +1890,8 @@ class GameManager:
 
         self._admin_floor_wallet(player)
         await self._push_wallet_sync(player)
+        # Ekrandagi «Коктейль Любви» hisoblagichi = DB gift_love_stock (klient cache emas)
+        await self._push_items_sync(player)
 
         player.session_started = True
 
@@ -2235,8 +2256,6 @@ class GameManager:
     # GAME TURN
     # ════════════════════════════════════════════════════════════════════════
     async def _handle_game_turn(self, player: Player):
-        if await self._reject_if_dynamite(player):
-            return
         # Stolni olish
         table = self.tables.get(player.table_id)
         if not table:
@@ -2482,8 +2501,6 @@ class GameManager:
           • Kim "NoKiss" bossa — faqat refuse effekti (juftiga kiss qo'shilmaydi).
         Raund: ikkala tomon ham action qilganda (yoki timeout) yopiladi.
         """
-        if await self._reject_if_dynamite(player):
-            return
         if table.state != STATE_OFFER or table.resolving:
             log.info(
                 "select_choice rad: state=%s resolving=%s uid=%s",
@@ -2635,8 +2652,6 @@ class GameManager:
     async def _handle_game_kiss(self, table: Table, player: Player, data: dict):
         """Legacy `game_kiss` paketini select_choice juftlik oqimiga yo'naltiramiz —
         shunda sherigining tanlovi kutiladi va keyingi klik bosolmay qolmaydi."""
-        if await self._reject_if_dynamite(player):
-            return
         if table.state != STATE_OFFER:
             log.debug(
                 "kiss e'tiborsiz: state=%s (kerak %s). uid=%s",
@@ -2651,8 +2666,6 @@ class GameManager:
         self,
         sender_id: Optional[int],
         receiver_id: Optional[int],
-        *,
-        add_emotion: bool = True,
     ):
         if not sender_id and not receiver_id:
             return
@@ -2661,8 +2674,7 @@ class GameManager:
                 if receiver_id:
                     # Kiss faqat qabul qilgan odam (receiver) uchun reytingga qo'shiladi
                     await repo.add_stat(receiver_id, "kisses", 1)
-                    if add_emotion:
-                        await repo.add_stat(receiver_id, "emotion", 1)
+                # emotion reytingi faqat game_gesture (emotsiya ko'rsatish) da oshadi
         except Exception as e:
             log.error(f"Kiss stat DB xatosi: {e}")
 
@@ -2739,6 +2751,8 @@ class GameManager:
             return
 
         is_love = self._is_gift_love(gt, gt_raw)
+        if is_love:
+            await self._sync_gift_love_from_db(player)
         if is_love and not self._gift_love_unlimited(player) and self._gift_love_stock(player) < 1:
             await self.send_to(
                 player,
@@ -2760,13 +2774,11 @@ class GameManager:
         receiver.kisses += 1
         # g_love («Коктейль Любви»): qabul qiluvchiga +1 ❤️
         if is_love:
-            await self._give_hearts(
+            await self._credit_wallet_hearts(
                 receiver,
                 1,
                 "gift_love_bonus",
-                save_to_db=True,
-                extra={"from_user_id": str(player.id), "gift_type": gt},
-                await_db=True,
+                description=f"from:{player.id}",
             )
             await self._push_items_sync(player)
             await self._push_wallet_sync(player)
@@ -2779,6 +2791,26 @@ class GameManager:
                 receiver, "total_kisses", int(receiver.total_kisses or 0)
             )
         stick_random = random.randint(0, 1_000_000_000)
+
+        if is_love:
+            love_log = {
+                "sovga": "g_love",
+                "nomi": "Коктейль Любви",
+                "kimdan": {
+                    "id": player.id,
+                    "db_id": player.db_id,
+                    "name": player.username,
+                },
+                "kimga": {
+                    "id": receiver.id,
+                    "db_id": receiver.db_id,
+                    "name": receiver.username,
+                },
+                "stol": table.table_id,
+                "narx": price,
+            }
+            log.info("[g_love] yuborildi: %s", love_log)
+            print(f"[g_love] Коктейль Любви: {player.username} ({player.id}) → {receiver.username} ({receiver.id})", flush=True)
 
         await self.broadcast(
             table.table_id,
@@ -2802,9 +2834,9 @@ class GameManager:
             async with self._db() as repo:
                 if sender_id:
                     await repo.add_stat(sender_id, "expense", price)
-                    await repo.add_stat(sender_id, "emotion", price // 5 + 1)
                 if receiver_id:
                     await repo.add_stat(receiver_id, "importance", price)
+                # emotion reytingi faqat game_gesture da (_bump_emotion_rating)
         except Exception as e:
             log.error(f"Gift stat DB xatosi: {e}")
 
@@ -2817,19 +2849,39 @@ class GameManager:
 
         drink_raw = str(data.get("drink_type", data.get("drink", ""))).strip()
         dt = self._normalize_item_type(drink_raw.lower())
+        dt_drink = "love" if dt == GIFT_LOVE_ITEM_ID else dt
         receiver_id = str(data.get("receiver_id", ""))
-        price = int(data.get("price", DRINK_PRICES.get(dt, 10)))
+        price = int(
+            data.get("price", DRINK_PRICES.get(dt_drink, DRINK_PRICES.get(dt, 10)))
+        )
         receiver = table.get_player_flexible(receiver_id)
 
-        if not receiver or dt not in DRINK_TYPES:
+        if not receiver or dt_drink not in DRINK_TYPES:
             await self.send_to(
                 player, {"type": "error", "msg": "Noto'g'ri ichimlik", "ts": self._ts()}
             )
             return
 
+        is_love_drink = self._is_gift_love(dt, drink_raw)
+        if is_love_drink:
+            await self._sync_gift_love_from_db(player)
+        if is_love_drink:
+            if not self._gift_love_unlimited(player) and self._gift_love_stock(player) < 1:
+                await self.send_to(
+                    player,
+                    {
+                        "type": "error",
+                        "msg": "«Коктейль Любви» tugadi.",
+                        "ts": self._ts(),
+                    },
+                )
+                return
+
         ok = await self._spend_hearts(player, price, "drink", f"drink:{dt}")
         if not ok:
             return
+        # Yuboruvchi: to'lovdan keyin gold klientda yangilansin
+        await self._push_wallet_sync(player)
 
         player.drink_count = int(player.drink_count or 0) + 1
 
@@ -2850,6 +2902,40 @@ class GameManager:
                 save_to_db=True,
                 extra={"from_user_id": str(player.id), "drink_type": dt},
                 await_db=True,
+            )
+
+        if is_love_drink:
+            self._consume_gift_love(player)
+            await self._persist_gift_love_stock(player)
+            await self._push_items_sync(player)
+            # «Коктейль Любви» — qabul qiluvchiga +1 ❤️ (DB + klient balansi)
+            await self._credit_wallet_hearts(
+                receiver,
+                1,
+                "drink_love_bonus",
+                description=f"from:{player.id}",
+            )
+            love_drink_log = {
+                "ichimlik": "love",
+                "nomi": "Коктейль Любви",
+                "kimdan": {
+                    "id": player.id,
+                    "db_id": player.db_id,
+                    "name": player.username,
+                },
+                "kimga": {
+                    "id": receiver.id,
+                    "db_id": receiver.db_id,
+                    "name": receiver.username,
+                },
+                "stol": table.table_id,
+                "narx": price,
+            }
+            log.info("[love_drink] yuborildi: %s", love_drink_log)
+            print(
+                f"[love_drink] Коктейль Любви: {player.username} ({player.id}) "
+                f"→ {receiver.username} ({receiver.id})",
+                flush=True,
             )
 
         await self.broadcast(
@@ -2912,9 +2998,6 @@ class GameManager:
     # GESTURE
     # ════════════════════════════════════════════════════════════════════════
     async def _handle_game_gesture(self, table: Table, player: Player, data: dict):
-        if await self._reject_if_dynamite(player):
-            return
-
         gesture = data.get("gesture", "")
         price = int(data.get("price", GESTURE_PRICES.get(gesture, 5)))
 
@@ -2937,7 +3020,6 @@ class GameManager:
                 await self._save_kiss_stats(
                     sender_id=None,
                     receiver_id=player.db_id,
-                    add_emotion=False,
                 )
             except Exception:
                 pass
@@ -2970,9 +3052,6 @@ class GameManager:
     # BOTTLE TYPE CHANGE
     # ════════════════════════════════════════════════════════════════════════
     async def _handle_game_bottle(self, table: Table, player: Player, data: dict):
-        if await self._reject_if_dynamite(player):
-            return
-
         bottle_type = data.get("bottle_type", "standart")
         price = int(data.get("price", 10))
 
@@ -2999,9 +3078,6 @@ class GameManager:
     # RANDOM GIFT
     # ════════════════════════════════════════════════════════════════════════
     async def _handle_game_random(self, table: Table, player: Player, data: dict):
-        if await self._reject_if_dynamite(player):
-            return
-
         receiver_id = str(data.get("receiver_id", ""))
         receiver = table.get_player_flexible(receiver_id)
         if not receiver:
@@ -3524,7 +3600,33 @@ class GameManager:
         song_id = str(
             data.get("id") or data.get("song_id") or data.get("video_id") or ""
         ).strip()
-        provider = str(data.get("provider") or "mv").strip() or "mv"
+        provider = str(data.get("provider") or "cz").strip().lower() or "cz"
+        url = str(data.get("url") or "").strip()
+        track_kind = str(
+            data.get("type") or data.get("source") or ""
+        ).strip().lower()
+        source_kind = str(data.get("source") or "").strip().lower()
+        is_video = (
+            provider == "mv"
+            or track_kind in ("movie", "video", "mv")
+            or source_kind in ("movie", "video", "mv")
+        )
+        data_type = str(data.get("type") or "")
+
+        if is_video:
+            # Video: YouTube iframe (klient `Ct`), audio stream emas
+            provider = "mv"
+            if song_id and (
+                not url
+                or "/api_music/play/" in url
+                or "youtube.com" not in url
+            ):
+                url = f"https://www.youtube.com/watch?v={song_id}"
+            data_type = "movie"
+        elif provider in ("yt", "cz") and song_id:
+            provider = "cz"
+            if not url or "youtube.com" in url or "youtu.be" in url:
+                url = f"/api_music/play/{song_id}"
 
         payload: dict = {
             "type": "game_music",
@@ -3534,10 +3636,11 @@ class GameManager:
             "id": song_id,
             "artist": str(data.get("artist") or ""),
             "title": str(data.get("title") or ""),
-            "url": str(data.get("url") or ""),
+            "url": url,
             "duration": int(data.get("duration") or 0),
             "icon": str(data.get("icon") or data.get("thumbnail") or ""),
             "provider": provider,
+            "track_type": data_type if is_video else str(data.get("type") or ""),
             "source": str(data.get("source") or ""),
             "start_timestamp": self._ts(),
             "ts": self._ts(),
@@ -3588,14 +3691,20 @@ class GameManager:
         """O'yin xonasida ijro etilgan trek — history papkasiga."""
         if not player.db_id:
             return
-        vid = str(data.get("id") or data.get("video_id") or "").strip()
+        vid = str(
+            data.get("id") or data.get("song_id") or data.get("video_id") or ""
+        ).strip()
         if not vid:
             return
         provider = str(data.get("provider") or "yt").strip() or "yt"
-        is_movie = str(data.get("type") or data.get("source") or "").lower() == "movie"
-        folder = "history_videos" if is_movie else "history_songs"
+        is_video = provider == "mv" or str(
+            data.get("type") or data.get("source") or ""
+        ).lower() in ("movie", "video", "mv")
+        if is_video:
+            provider = "mv"
+        folder = "history_videos" if is_video else "history_songs"
         try:
-            from src.app.database.repositories.music_favorites import (
+            from src.app.database.repositories.music import (
                 MusicFavoritesRepository,
             )
 
@@ -3609,8 +3718,15 @@ class GameManager:
                     favorite=True,
                 )
                 await repo.session.commit()
+            log.info(
+                "music history saved user=%s folder=%s provider=%s id=%s",
+                player.db_id,
+                folder,
+                provider,
+                vid,
+            )
         except Exception as e:
-            log.debug("music history append: %s", e)
+            log.warning("music history append user=%s: %s", player.db_id, e)
 
     async def _save_dj_stat(self, db_id, amount: int):
         if not db_id:
@@ -4599,8 +4715,6 @@ class GameManager:
     # BOOSTER
     # ════════════════════════════════════════════════════════════════════════
     async def _handle_game_turn_booster(self, table: Table, player: Player, data: dict):
-        if await self._reject_if_dynamite(player):
-            return
         await self.broadcast(
             table.table_id,
             {
@@ -4723,9 +4837,8 @@ class GameManager:
                 payload["dj_score_rank"] = rk
                 rk, _ = await repo.get_user_rank_by_column(db_id, "emotion")
                 payload["gestures_rank"] = rk
-                rk, _ = await repo.get_user_rank_by_column(db_id, "expense")
-                payload["price_rank"] = rk
                 rk, _ = await repo.get_user_rank_by_column(db_id, "harem_price")
+                payload["price_rank"] = rk
                 payload["harem_price_rank"] = rk
 
                 ach = await repo.get_user_achievements(db_id)
@@ -4884,16 +4997,48 @@ class GameManager:
             },
         )
 
-    async def _push_items_sync(self, player: Player) -> None:
-        """Klient `viewer.viewer.items` (g_love hisoblagichi va boshqalar)."""
+    def _gift_love_stock_authoritative(self, player: Player) -> int:
+        """Ekranda ko‘rsatiladigan son — faqat DB dan sinxronlangan `items.g_love`."""
+        if self._gift_love_unlimited(player):
+            return GIFT_LOVE_UNLIMITED_MIN
+        return max(0, self._gift_love_stock(player))
+
+    def _items_for_client(self, player: Player) -> dict[str, Any]:
+        """Klientga yuboriladigan inventar: zaxira 0 bo‘lsa g_love yo‘q (paneldan yashiriladi)."""
+        items = dict(player.items)
+        stock = self._gift_love_stock_authoritative(player)
+        items.pop(GIFT_LOVE_ITEM_ID, None)
+        if stock > 0:
+            items[GIFT_LOVE_ITEM_ID] = stock
+        return items
+
+    def _items_get_payload(self, player: Player) -> dict[str, Any]:
+        """items_get + `gift_love_stock` (klient eski merge xatosini oldini oladi)."""
+        stock = self._gift_love_stock_authoritative(player)
+        return {
+            "type": "items_get",
+            "items": self._items_for_client(player),
+            "gift_love_stock": stock,
+            "ts": self._ts(),
+        }
+
+    async def _push_gift_love_stock(self, player: Player) -> None:
+        """Klient: 0 bo‘lsa kokteylni yashirish (`gift_love_stock` + items_get)."""
+        stock = self._gift_love_stock_authoritative(player)
         await self.send_to(
             player,
             {
-                "type": "items_get",
-                "items": dict(player.items),
+                "type": "gift_love_stock",
+                "stock": stock,
                 "ts": self._ts(),
             },
         )
+
+    async def _push_items_sync(self, player: Player) -> None:
+        """Klient `viewer.viewer.items` (g_love hisoblagichi va boshqalar)."""
+        await self._sync_gift_love_from_db(player)
+        await self.send_to(player, self._items_get_payload(player))
+        await self._push_gift_love_stock(player)
 
     @staticmethod
     def _normalize_item_type(raw: str) -> str:
@@ -4944,7 +5089,8 @@ class GameManager:
         return int(player.items.get(GIFT_LOVE_ITEM_ID, 0) or 0)
 
     def _gift_love_unlimited(self, player: Player) -> bool:
-        return self._gift_love_stock(player) >= GIFT_LOVE_UNLIMITED_MIN
+        # Faqat aynan 999 = cheksiz; 1000+ oddiy son (har yuborishda −1).
+        return self._gift_love_stock(player) == GIFT_LOVE_UNLIMITED_MIN
 
     def _consume_gift_love(self, player: Player) -> Optional[str]:
         """Inventardan 1 ta ayirish; >=999 cheksiz. Xato matni yoki None."""
@@ -4973,6 +5119,31 @@ class GameManager:
         except Exception as e:
             log.debug("persist gift_love_stock: %s", e)
 
+    async def _sync_gift_love_from_db(self, player: Player) -> None:
+        """DB `gift_love_stock` → `player.items.g_love` (ekrandagi hisoblagich)."""
+        if not player.db_id or not self._db_factory:
+            return
+        try:
+            async with self._db() as repo:
+                db_user = await repo.get_user_by_id(int(player.db_id))
+            if not db_user:
+                return
+            love_stock = int(getattr(db_user, "gift_love_stock", 0) or 0)
+            if love_stock > 50_000:
+                log.warning(
+                    "gift_love_stock juda katta: user_id=%s stock=%s — admin tekshiruvi kerak",
+                    player.db_id,
+                    love_stock,
+                )
+            if getattr(player, "is_admin", False):
+                player.items[GIFT_LOVE_ITEM_ID] = GIFT_LOVE_UNLIMITED_MIN
+            elif love_stock > 0:
+                player.items[GIFT_LOVE_ITEM_ID] = love_stock
+            else:
+                player.items.pop(GIFT_LOVE_ITEM_ID, None)
+        except Exception as e:
+            log.debug("sync gift_love_from_db: %s", e)
+
     def _find_online_player_by_db_id(self, db_id: int) -> Optional[Player]:
         """Stolda yoki navbatda turgan onlayn o'yinchi."""
         if not db_id:
@@ -4992,11 +5163,15 @@ class GameManager:
         if not player:
             return False
         stock = max(0, int(stock or 0))
-        if stock > 0:
+        if getattr(player, "is_admin", False) and stock >= GIFT_LOVE_UNLIMITED_MIN:
+            player.items[GIFT_LOVE_ITEM_ID] = GIFT_LOVE_UNLIMITED_MIN
+        elif stock > 0:
             player.items[GIFT_LOVE_ITEM_ID] = stock
         else:
             player.items.pop(GIFT_LOVE_ITEM_ID, None)
-        await self._push_items_sync(player)
+        # DB allaqachon yangilangan — qayta sync eski qiymatni qaytarib yubormasin
+        await self.send_to(player, self._items_get_payload(player))
+        await self._push_gift_love_stock(player)
         return True
 
     # ════════════════════════════════════════════════════════════════════════
@@ -5309,13 +5484,13 @@ class GameManager:
 
     async def _handle_get_favorite_songs(self, player: Player, data: dict) -> None:
         """Klient `favorite_songs` javobini kutadi: song_ids, max_items."""
-        from src.app.database.repositories.music_favorites import (
+        from src.app.database.repositories.music import (
             MusicFavoritesRepository,
             folder_limit,
         )
 
         folder = str(data.get("folder") or "fav_songs").strip()
-        provider = str(data.get("provider") or "mv").strip() or "mv"
+        provider = str(data.get("provider") or "cz").strip() or "cz"
         song_ids: list[str] = []
 
         if player.db_id:
@@ -5323,6 +5498,10 @@ class GameManager:
                 async with self._db() as repo:
                     mf = MusicFavoritesRepository(repo.session)
                     song_ids = await mf.get_song_ids(player.db_id, folder, provider)
+                    if not song_ids and provider != "cz":
+                        song_ids = await mf.get_song_ids(
+                            player.db_id, folder, "cz"
+                        )
             except Exception as e:
                 log.warning("get_favorite_songs user=%s: %s", player.db_id, e)
 
@@ -5341,10 +5520,10 @@ class GameManager:
     async def _handle_mark_song_favorite(self, player: Player, data: dict) -> None:
         if not player.db_id:
             return
-        from src.app.database.repositories.music_favorites import MusicFavoritesRepository
+        from src.app.database.repositories.music import MusicFavoritesRepository
 
         folder = str(data.get("folder") or "fav_songs").strip()
-        provider = str(data.get("provider") or "mv").strip() or "mv"
+        provider = str(data.get("provider") or "cz").strip() or "cz"
         song_id = str(data.get("song_id") or "").strip()
         favorite = bool(data.get("favorite"))
         if not song_id:
@@ -5738,9 +5917,9 @@ class GameManager:
     # ITEMS / PASS / LEAGUE
     # ════════════════════════════════════════════════════════════════════════
     async def _handle_items_get(self, player: Player):
-        await self.send_to(
-            player, {"type": "items_get", "items": player.items, "ts": self._ts()}
-        )
+        await self._sync_gift_love_from_db(player)
+        await self.send_to(player, self._items_get_payload(player))
+        await self._push_gift_love_stock(player)
 
     async def _try_apply_offer_booster_now(
         self, table: Table, player: Player, booster: str
@@ -5873,8 +6052,11 @@ class GameManager:
         "total_kisses": "kisses",
         "dj_score": "dj",
         "harem_price": "harem_price",
+        # «Emotsiyalar» reytingi — faqat users.emotion (game_gesture +1)
         "gestures": "emotion",
-        "price": "expense",
+        # «Самые дорогие» — faqat uxajor narxi (DB users.harem_price).
+        # expense (sovg'a xarajati) bu reytingga kirmaydi.
+        "price": "harem_price",
         # Eski (UserStats) atashlar — backward compatibility uchun
         "kisses": "kisses",
         "dj": "dj",
@@ -6137,6 +6319,18 @@ class GameManager:
 
     async def _handle_item_purchase(self, player: Player, data: dict):
         item = data.get("item", "")
+        canon = self._normalize_item_type(str(item))
+        if canon == GIFT_LOVE_ITEM_ID or self._is_gift_love(canon, str(item)):
+            await self.send_to(
+                player,
+                {
+                    "type": "error",
+                    "msg": "«Коктейль Любви» faqat admin orqali beriladi.",
+                    "ts": self._ts(),
+                },
+            )
+            return
+
         price = int(data.get("price", 30))
 
         ok = await self._spend_hearts(player, price, "item_purchase", f"item:{item}")
@@ -6153,7 +6347,8 @@ class GameManager:
                 "type": "item_purchase",
                 "ok": True,
                 "item": item,
-                "items": player.items,
+                "items": self._items_for_client(player),
+                "gift_love_stock": self._gift_love_stock_authoritative(player),
                 "ts": self._ts(),
             },
         )
@@ -6240,12 +6435,7 @@ class GameManager:
             player,
             {
                 "type": "gold2tokens_get",
-                "items": [
-                    {"gold": 50, "tokens": 1},
-                    {"gold": 100, "tokens": 2},
-                    {"gold": 500, "tokens": 12},
-                    {"gold": 1000, "tokens": 25},
-                ],
+                "items": list(GOLD2TOKENS_ITEMS),
                 "ts": ts,
             },
         )
@@ -6255,8 +6445,17 @@ class GameManager:
         gold = int(data.get("gold", 0) or 0)
         if gold <= 0:
             return
-        rate = 50
-        tokens_inc = max(1, gold // rate)
+        tokens_inc = GOLD2TOKENS_BY_GOLD.get(gold)
+        if tokens_inc is None:
+            await self.send_to(
+                player,
+                {
+                    "type": "error",
+                    "msg": "Noto'g'ri almashtirish",
+                    "ts": self._ts(),
+                },
+            )
+            return
         ok = await self._spend_hearts(player, gold, "gold2tokens")
         if not ok:
             return
@@ -6415,6 +6614,45 @@ class GameManager:
                 await repo.add_hearts(db_id, amount, tx_type)
         except Exception as e:
             log.error(f"Hearts add DB xatosi: {e}")
+
+    async def _credit_wallet_hearts(
+        self,
+        player: Player,
+        amount: int,
+        tx_type: str,
+        *,
+        description: str = "",
+    ) -> bool:
+        """`wallets.hearts` ga qo'shish (klientda gold deb ko'rinadi). Admin ham DB ga yoziladi."""
+        if amount <= 0 or not player.db_id:
+            return False
+        new_balance: Optional[int] = None
+        if self._db_factory:
+            try:
+                async with self._db() as repo:
+                    await repo.ensure_wallet(int(player.db_id))
+                    new_balance = await repo.add_hearts(
+                        int(player.db_id),
+                        amount,
+                        tx_type,
+                        description or tx_type,
+                    )
+            except Exception as e:
+                log.error(
+                    "credit wallet hearts user=%s: %s", player.db_id, e
+                )
+                return False
+        if new_balance is None:
+            player.hearts = int(player.hearts or 0) + amount
+            player.hearts_real = int(player.hearts or 0)
+        elif getattr(player, "is_admin", False):
+            player.hearts = int(player.hearts or 0) + amount
+            player.hearts_real = player.hearts
+        else:
+            player.hearts = int(new_balance)
+            player.hearts_real = int(new_balance)
+        await self._push_wallet_sync(player)
+        return True
 
     async def _db_mark_bonus_claimed(self, db_id: int):
         try:

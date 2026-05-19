@@ -1,6 +1,6 @@
 from pathlib import Path
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Request, Depends, HTTPException, Body
+from fastapi import APIRouter, Request, Depends, HTTPException, Body, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,7 @@ from src.app.database.models import User, AdminActionLog, BroadcastMessage, Wall
 from src.app.database.models.stats import UserStats
 from src.app.api.ws.game_manager import manager as game_manager
 from src.app.api.ws.constants import GIFT_LOVE_UNLIMITED_MIN
+from src.app.core.security.validators import sanitize_search_text
 
 site_dir = Path(__file__).resolve().parents[2] / "site"
 templates = Jinja2Templates(directory=str(site_dir))
@@ -63,10 +64,14 @@ async def admin_page(request: Request, admin_info: dict = Depends(get_current_ad
 
 @router.get("/api/admin/search_user")
 async def search_admin_user(
-    query: str,
+    query: str = Query(..., min_length=1, max_length=64),
     session: AsyncSession = Depends(get_db),
     admin_id: int = Depends(get_current_admin)
 ):
+    query = sanitize_search_text(query, max_len=64)
+    if not query:
+        return {"success": False, "message": "Noto'g'ri qidiruv"}
+
     user_repo = UserRepository(session)
     user = None
     
@@ -311,10 +316,13 @@ async def grant_love_cocktail(
         amount = 0
 
     operation = (data.get("operation") or "add").strip().lower()
-    if operation not in ("add", "set", "subtract", "clear"):
+    if operation not in ("add", "set", "subtract", "clear", "unlimited"):
         operation = "add"
 
-    if operation != "clear" and amount <= 0:
+    if operation == "unlimited":
+        amount = GIFT_LOVE_UNLIMITED_MIN
+
+    if operation not in ("clear", "unlimited") and amount <= 0:
         return JSONResponse(
             {"success": False, "message": "Miqdor musbat butun son bo'lishi kerak"},
             status_code=400,
@@ -329,6 +337,9 @@ async def grant_love_cocktail(
     if operation == "clear":
         new_stock = 0
         log_action = "revoke_love_cocktail_all"
+    elif operation == "unlimited":
+        new_stock = GIFT_LOVE_UNLIMITED_MIN
+        log_action = "grant_love_cocktail_unlimited"
     elif operation == "set":
         new_stock = amount
         log_action = "set_love_cocktail"
@@ -357,7 +368,7 @@ async def grant_love_cocktail(
 
     synced = await game_manager.admin_sync_gift_love_stock(target_id, new_stock)
 
-    if new_stock >= GIFT_LOVE_UNLIMITED_MIN:
+    if new_stock == GIFT_LOVE_UNLIMITED_MIN:
         display = "999+ (cheksiz)"
     elif new_stock <= 0:
         display = "0 (yo'q)"

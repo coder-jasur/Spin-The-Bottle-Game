@@ -27,6 +27,7 @@ from src.app.api.ws.constants import (
     GIFT_TYPES_FREE,
     GIFT_TYPES_VIP,
     GIFT_LOVE_ITEM_ID,
+    GIFT_LOVE_UNLIMITED_MIN,
     KICKOUT_STREAK_RESET_SECONDS,
     league_state_for_total_kisses,
     league_tier_from_total_kisses,
@@ -186,6 +187,15 @@ class Player:
         self.achievements_bonus_claimed: Dict[str, int] = {}
         self.is_admin: bool = False
 
+    @staticmethod
+    def _viewer_snapshot_for_login(player: "Player") -> dict:
+        """Login `viewer.viewer` — g_love hisoblagichi DB bilan bir xil bo‘lishi uchun."""
+        love_n = int(player.items.get(GIFT_LOVE_ITEM_ID, 0) or 0)
+        inner: dict = {"ipCountry": "UZ"}
+        if love_n > 0:
+            inner["items"] = {GIFT_LOVE_ITEM_ID: love_n}
+        return {"viewer": inner}
+
     def grant_default_owned_items(self) -> None:
         """Klient `items[id] >= 1` bo‘lsa dekor/sovga/stil «ochilgan» deb qabul qiladi.
         Mehmon ham ramka tanlash oynasida bepul ramkalarni ko‘ra olsin; VIP uchun
@@ -228,7 +238,10 @@ class Player:
         for hat in HAT_TYPES:
             self.items[hat] = max(int(self.items.get(hat, 0) or 0), 1)
         for gift in GIFT_TYPES:
+            if gift == GIFT_LOVE_ITEM_ID:
+                continue
             self.items[gift] = max(int(self.items.get(gift, 0) or 0), 1)
+        self.items[GIFT_LOVE_ITEM_ID] = GIFT_LOVE_UNLIMITED_MIN
         for drink in DRINK_TYPES:
             self.items[drink] = max(int(self.items.get(drink, 0) or 0), 1)
         for bottle in BOTTLE_TYPES:
@@ -308,7 +321,9 @@ class Player:
         p._game_login_name = telegram_username_label(db_user)
         p.level    = db_user.level   or 1
         p.xp       = db_user.xp      or 0
-        p.age      = db_user.age     or 0
+        from src.app.api.ws.profile_setup import effective_profile_age
+
+        p.age = effective_profile_age(db_user)
         p.country  = db_user.country or "UZ"
         from src.app.core.language import normalize_lang, to_game_locale
 
@@ -614,11 +629,7 @@ class Player:
             "abtest":             {"kickout": True},
             "ip_country":         "UZ",
             "ipCountry":          "UZ",
-            "viewer": {
-                "viewer": {
-                    "ipCountry":  "UZ"
-                }
-            },
+            "viewer": Player._viewer_snapshot_for_login(self),
             "compliments_available": 0,
             "clients":            [],
             "purchase_bonus_upto": 0,
@@ -640,5 +651,9 @@ class Player:
             "league":             league_tier_from_total_kisses(self.total_kisses),
             "max_league":         16,
             "profile_update_ms":  0,
+            # Login: faqat DB dan yuklangan zaxira (RAM dagi eski 100k+ xato son emas)
+            "gift_love_stock": max(
+                0, int(self.items.get(GIFT_LOVE_ITEM_ID, 0) or 0)
+            ),
         }
         return pl

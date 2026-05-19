@@ -906,6 +906,22 @@ class GameRepository:
         )
         await self.session.commit()
 
+    async def delete_table_chat_messages_for_user(
+        self, table_id: int, user_ids: list[str]
+    ) -> int:
+        """Stoldagi foydalanuvchining barcha chat yozuvlarini o'chirish (dinamit)."""
+        ids = [str(u).strip() for u in user_ids if str(u).strip()]
+        if not ids:
+            return 0
+        res = await self.session.execute(
+            delete(TableChatMessage).where(
+                TableChatMessage.table_id == table_id,
+                TableChatMessage.user_id.in_(ids),
+            )
+        )
+        await self.session.commit()
+        return int(res.rowcount or 0)
+
     async def get_recent_table_chat_messages(
         self, table_id: int, *, limit: int = 5
     ) -> list[dict]:

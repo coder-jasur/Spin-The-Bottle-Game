@@ -79,5 +79,9 @@ def build_server_json(request: Request, settings=None) -> dict[str, Any]:
         if isinstance(block, dict):
             block["server"] = host_only
             block["server_v2"] = [ws]
+            block["youtube"] = f"{base}/"
+            block["youtube_v2"] = [f"{base}/"]
+            block["music"] = f"{base}/api_music"
+            block["music_v2"] = [f"{base}/api_music"]
 
     return data

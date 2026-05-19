@@ -15,87 +15,30 @@
         "sfx_url": "/sfx/",
         "sfx_url_v2": "/sfx/${name}?6",
         "bundles": [
-            {
-                "size": 300,
-                "url": "/80/${name}?9"
-            },
-            {
-                "size": 450,
-                "url": "/120/${name}?9"
-            },
-            {
-                "size": 562,
-                "url": "/150/${name}?9"
-            },
-            {
-                "size": 675,
-                "url": "/180/${name}?9"
-            },
-            {
-                "size": 750,
-                "url": "/200/${name}?9"
-            },
-            {
-                "size": 1125,
-                "url": "/300/${name}?9"
-            },
-            {
-                "size": 1500,
-                "url": "/400/${name}?9"
-            },
-            {
-                "size": 1875,
-                "url": "/500/${name}?9"
-            }
+            {"size": 300, "url": "/80/${name}?9"},
+            {"size": 450, "url": "/120/${name}?9"},
+            {"size": 562, "url": "/150/${name}?9"},
+            {"size": 675, "url": "/180/${name}?9"},
+            {"size": 750, "url": "/200/${name}?9"},
+            {"size": 1125, "url": "/300/${name}?9"},
+            {"size": 1500, "url": "/400/${name}?9"},
+            {"size": 1875, "url": "/500/${name}?9"}
         ],
         "bundles_v2": {
             "dlg": [
-                {
-                    "dpr": 1,
-                    "url": "/dlg100/${name}?9"
-                },
-                {
-                    "dpr": 2,
-                    "url": "/dlg200/${name}?9"
-                },
-                {
-                    "dpr": 3,
-                    "url": "/dlg300/${name}?9"
-                }
+                {"dpr": 1, "url": "/dlg100/${name}?9"},
+                {"dpr": 2, "url": "/dlg200/${name}?9"},
+                {"dpr": 3, "url": "/dlg300/${name}?9"}
             ],
             "table": [
-                {
-                    "size": 300,
-                    "url": "/80/${name}?9"
-                },
-                {
-                    "size": 450,
-                    "url": "/120/${name}?9"
-                },
-                {
-                    "size": 562,
-                    "url": "/150/${name}?9"
-                },
-                {
-                    "size": 675,
-                    "url": "/180/${name}?9"
-                },
-                {
-                    "size": 750,
-                    "url": "/200/${name}?9"
-                },
-                {
-                    "size": 1125,
-                    "url": "/300/${name}?9"
-                },
-                {
-                    "size": 1500,
-                    "url": "/400/${name}?9"
-                },
-                {
-                    "size": 1875,
-                    "url": "/500/${name}?9"
-                }
+                {"size": 300, "url": "/80/${name}?9"},
+                {"size": 450, "url": "/120/${name}?9"},
+                {"size": 562, "url": "/150/${name}?9"},
+                {"size": 675, "url": "/180/${name}?9"},
+                {"size": 750, "url": "/200/${name}?9"},
+                {"size": 1125, "url": "/300/${name}?9"},
+                {"size": 1500, "url": "/400/${name}?9"},
+                {"size": 1875, "url": "/500/${name}?9"}
             ]
         }
     },
@@ -109,157 +52,128 @@
         "bootstrap": "index.html",
         "releases": {
             "appgallery": {
-                "blocked": [
-                    "1.0.0"
-                ],
+                "blocked": ["1.0.0"],
                 "recommended": "1.0.0",
                 "required": "3.7.6",
-                "url": "https://appgallery.huawei.com/app/C103005977"
+                "url": ""
             },
             "googleplay": {
-                "blocked": [
-                    "1.0.0"
-                ],
+                "blocked": ["1.0.0"],
                 "recommended": "1.0.0",
                 "required": "3.7.6",
-                "url": "https://play.google.com/store/apps/details?id=com.ciliz.spinthebottle"
+                "url": ""
             },
             "mts": {
-                "blocked": [
-                    "1.0.0"
-                ],
+                "blocked": ["1.0.0"],
                 "recommended": "1.0.0",
                 "required": "1.0.0",
-                "url": "https://links.appbazar.am/a2khVCE8ERkRA3t27"
+                "url": ""
             },
             "rustore": {
-                "blocked": [
-                    "1.0.0"
-                ],
+                "blocked": ["1.0.0"],
                 "recommended": "1.0.0",
                 "required": "3.7.6",
-                "url": "https://www.rustore.ru/catalog/app/com.ciliz.spinthebottle"
+                "url": ""
             }
         }
     },
-    "ma": {
-        "server": "37.200.70.31",
-        "server_v2": [
-            "wss://bottle-mamba.ciliz.com/ws/"
-        ],
-        "port": 2223,
-        "music": "http://95.213.248.70/api/",
-        "music_v2": [
-            "http://95.213.248.70/api/"
-        ],
-        "youtube": "http://78.155.203.218/",
-        "youtube_v2": [
-            "https://youtube.ciliz.com/",
-            "https://api-proxy.ciliz.com/youtube/"
-        ]
-    },
-    "ok": {
-        "server": "85.119.149.107",
-        "server_v2": [
-            "wss://bottle.tgspinbotlle.com/ws/"
-        ],
-        "port": 2222,
-        "music": "http://95.213.248.70/api/",
-        "music_v2": [
-            "http://95.213.248.70/api/"
-        ],
-        "youtube": "http://78.155.203.218/",
-        "youtube_v2": [
-            "https://youtube.ciliz.com/",
-            "https://api-proxy.ciliz.com/youtube/"
-        ]
-    },
-    "as": {
-        "server": "54.72.14.154",
-        "server_v2": [
-            "wss://bottle.tgspinbotlle.com/ws/"
-        ],
-        "port": 8000
-    },
     "fb": {
         "server": "localhost",
-        "server_v2": [
-            "ws://localhost:8000/ws/"
-        ],
+        "server_v2": ["ws://localhost:8000/ws/"],
         "port": 8000,
-        "youtube": "http://78.155.203.218/",
-        "youtube_v2": [
-            "https://youtube.ciliz.com/",
-            "https://api-proxy.ciliz.com/youtube/"
-        ]
-    },
-    "gg": {
-        "server": "54.72.14.154",
-        "server_v2": [
-            "wss://bottle.tgspinbotlle.com/ws/"
-        ],
-        "port": 2223,
-        "youtube": "http://78.155.203.218/",
-        "youtube_v2": [
-            "https://youtube.ciliz.com/",
-            "https://api-proxy.ciliz.com/youtube/"
-        ]
-    },
-    "fbig": {
-        "server": "bottle-ig.ciliz.com",
-        "server_v2": [
-            "wss://bottle-ig.ciliz.com/ws/"
-        ],
-        "port": 4445
-    },
-    "fb-ig": {
-        "server": "bottle-ig.ciliz.com",
-        "server_v2": [
-            "wss://bottle-ig.ciliz.com/ws/"
-        ],
-        "port": 4445
-    },
-    "vk": {
-        "server": "185.137.235.33",
-        "server_v2": [
-            "wss://bottle-vk.ciliz.com/ws/"
-        ],
-        "port": 2223,
-        "youtube": "http://78.155.203.218/",
-        "youtube_v2": [
-            "https://youtube.ciliz.com/",
-            "https://api-proxy.ciliz.com/youtube/"
-        ]
-    },
-    "mm": {
-        "server": "178.132.207.59",
-        "server_v2": [
-            "wss://bottle-mm.ciliz.com/ws/"
-        ],
-        "port": 2222,
-        "youtube": "http://78.155.203.218/",
-        "youtube_v2": [
-            "https://youtube.ciliz.com/",
-            "https://api-proxy.ciliz.com/youtube/"
-        ]
+        "music": "http://localhost:8000/api_music",
+        "music_v2": ["http://localhost:8000/api_music"],
+        "youtube": "http://localhost:8000/",
+        "youtube_v2": ["http://localhost:8000/"]
     },
     "tg": {
-        "server": "bottle-tg.ciliz.com",
-        "server_v2": [
-            "wss://bottle-tg.ciliz.com/ws/"
-        ],
-        "port": 2223,
-        "youtube": "http://78.155.203.218/",
-        "youtube_v2": [
-            "https://youtube.ciliz.com/",
-            "https://api-proxy.ciliz.com/youtube/"
-        ]
+        "server": "localhost",
+        "server_v2": ["ws://localhost:8000/ws/"],
+        "port": 8000,
+        "music": "http://localhost:8000/api_music",
+        "music_v2": ["http://localhost:8000/api_music"],
+        "youtube": "http://localhost:8000/",
+        "youtube_v2": ["http://localhost:8000/"]
+    },
+    "ok": {
+        "server": "localhost",
+        "server_v2": ["ws://localhost:8000/ws/"],
+        "port": 8000,
+        "music": "http://localhost:8000/api_music",
+        "music_v2": ["http://localhost:8000/api_music"],
+        "youtube": "http://localhost:8000/",
+        "youtube_v2": ["http://localhost:8000/"]
+    },
+    "as": {
+        "server": "localhost",
+        "server_v2": ["ws://localhost:8000/ws/"],
+        "port": 8000,
+        "music": "http://localhost:8000/api_music",
+        "music_v2": ["http://localhost:8000/api_music"],
+        "youtube": "http://localhost:8000/",
+        "youtube_v2": ["http://localhost:8000/"]
+    },
+    "gg": {
+        "server": "localhost",
+        "server_v2": ["ws://localhost:8000/ws/"],
+        "port": 8000,
+        "music": "http://localhost:8000/api_music",
+        "music_v2": ["http://localhost:8000/api_music"],
+        "youtube": "http://localhost:8000/",
+        "youtube_v2": ["http://localhost:8000/"]
+    },
+    "ma": {
+        "server": "localhost",
+        "server_v2": ["ws://localhost:8000/ws/"],
+        "port": 8000,
+        "music": "http://localhost:8000/api_music",
+        "music_v2": ["http://localhost:8000/api_music"],
+        "youtube": "http://localhost:8000/",
+        "youtube_v2": ["http://localhost:8000/"]
+    },
+    "vk": {
+        "server": "localhost",
+        "server_v2": ["ws://localhost:8000/ws/"],
+        "port": 8000,
+        "music": "http://localhost:8000/api_music",
+        "music_v2": ["http://localhost:8000/api_music"],
+        "youtube": "http://localhost:8000/",
+        "youtube_v2": ["http://localhost:8000/"]
+    },
+    "mm": {
+        "server": "localhost",
+        "server_v2": ["ws://localhost:8000/ws/"],
+        "port": 8000,
+        "music": "http://localhost:8000/api_music",
+        "music_v2": ["http://localhost:8000/api_music"],
+        "youtube": "http://localhost:8000/",
+        "youtube_v2": ["http://localhost:8000/"]
     },
     "ya": {
-        "server": "bottle-ya.ciliz.com",
-        "server_v2": [
-            "wss://bottle-ya.ciliz.com/ws/"
-        ],
-        "port": 2223
+        "server": "localhost",
+        "server_v2": ["ws://localhost:8000/ws/"],
+        "port": 8000,
+        "music": "http://localhost:8000/api_music",
+        "music_v2": ["http://localhost:8000/api_music"],
+        "youtube": "http://localhost:8000/",
+        "youtube_v2": ["http://localhost:8000/"]
+    },
+    "fbig": {
+        "server": "localhost",
+        "server_v2": ["ws://localhost:8000/ws/"],
+        "port": 8000,
+        "music": "http://localhost:8000/api_music",
+        "music_v2": ["http://localhost:8000/api_music"],
+        "youtube": "http://localhost:8000/",
+        "youtube_v2": ["http://localhost:8000/"]
+    },
+    "fb-ig": {
+        "server": "localhost",
+        "server_v2": ["ws://localhost:8000/ws/"],
+        "port": 8000,
+        "music": "http://localhost:8000/api_music",
+        "music_v2": ["http://localhost:8000/api_music"],
+        "youtube": "http://localhost:8000/",
+        "youtube_v2": ["http://localhost:8000/"]
     }
 }

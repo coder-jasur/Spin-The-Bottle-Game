@@ -3,7 +3,9 @@ O'yin konstantalari — barcha item turlari, narxlar, holat kodlari.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime
+from pathlib import Path
 
 # ── Boosterlar ────────────────────────────────────────────────────────────
 BOOSTER_TYPES = {
@@ -43,11 +45,13 @@ GIFT_TYPES_VIP = [
 ]
 GIFT_TYPES = ['air_kiss', 'air_kiss_premium', 'astronaut', 'bear1', 'bear4', 'bear6', 'bear7', 'bikinibottom', 'bikinitop', 'blackrose', 'bomb', 'boxingglove', 'bra', 'bretzel', 'brokenheart', 'candy', 'clover', 'comet', 'dollar', 'donut', 'easteregg', 'egg', 'flower', 'flower_premium', 'football', 'frog', 'frog_premium', 'g_love', 'gem', 'gem_premium', 'ghost', 'gingy', 'goldstar', 'handcuffs', 'heartangel', 'heartdevil', 'holigrenade', 'iloveyou', 'kick', 'leaf', 'leatherbra', 'leathercathat', 'leathergag', 'leathermousehat', 'leatherzipmask', 'leninbadge', 'loveis', 'maracas', 'medicalmask', 'meteorit', 'notes', 'olympmedal', 'orange', 'pancake', 'pants', 'pepper', 'pillow', 'piratespot', 'polaroid', 'prankcake', 'pumpkin', 'random', 'rosep', 'roser', 'rosew', 'salute', 'seafish', 'seashell', 'seastar', 'sheriffstar', 'smile', 'snowball', 'sponge', 'strawberry', 'superbowlball', 'sweet', 'sweet_premium', 'swimmers', 'theatremask', 'tomato', 'trout', 'valenok', 'valentine', 'vipcock', 'voodoo', 'whip', 'whistle']
 
-# «Коктейль Любви» — inventar (`player.items`); >= GIFT_LOVE_UNLIMITED_MIN → cheksiz (kamaymaydi).
+# «Коктейль Любви» — inventar (`player.items` ↔ DB `gift_love_stock`).
+# Aynan 999 = cheksiz (kamaymaydi). Boshqa sonlar: ekranda ko'rinadi, har yuborishda −1.
 GIFT_LOVE_ITEM_ID = "g_love"
 GIFT_LOVE_UNLIMITED_MIN = 999
 
-# Dynamite (ichimlik) — qurbon chat/sovg'a/butilka qila olmaydi; bomba sovg'adan boshqa sovg'a yechadi.
+# Dynamite (ichimlik) — qurbon faqat chat (SMS) va musiqa qo'ya olmaydi; chat yozuvlari o'chadi.
+# Butilka aylantirish, sovg'a va boshqa o'yin harakatlari ruxsat.
 DYNAMITE_DRINK_TYPE = "dynamite"
 BOMB_GIFT_TYPES: frozenset[str] = frozenset({"bomb", "holigrenade"})
 
@@ -71,7 +75,56 @@ HAT_PRICES = {'astronomy': 2, 'babecap': 2, 'baranki': 2, 'baseball1': 2, 'baseb
 # ── Imo-ishoralar (tokenlar bilan) ────────────────────────────────────────
 GESTURE_TYPES = ['agree', 'airkissges', 'angelges', 'anger', 'applause', 'artistges', 'bandit', 'barmanges', 'bayanistges', 'beback', 'beerges', 'binocularsges', 'bla', 'bouqetges', 'bragging', 'braggingvip', 'bunchofmoney', 'bye', 'camouflageges', 'cannotspeak', 'chocolateges', 'contempt', 'cool', 'crackerges', 'crazy', 'cry', 'dance', 'defenderges', 'devil', 'dikaprio', 'disagree', 'disco', 'dj', 'dragonges', 'driving', 'drunk', 'elvisges', 'explode', 'facepalm', 'famousges', 'fearful', 'fk', 'gentleman', 'gratitude', 'grinning', 'grunt', 'guitaristges', 'handround', 'happy', 'heartface', 'heartges', 'hello', 'jediges', 'jewelerges', 'jugglerges', 'kiss', 'laugh', 'little', 'lookthroughges', 'loveges', 'michael', 'mimistges', 'monkey', 'muerteges', 'music', 'nohearts', 'nurseges', 'ok', 'orangutanges', 'parrot', 'party', 'rap', 'rich', 'rock', 'sad', 'scream', 'selfie', 'shy', 'sleepges', 'smoking', 'snowballges', 'sparklerges', 'star', 'stereoglassesges', 'strictges', 'sun', 'thumbdown', 'thumbup', 'tongue', 'vomiting', 'wall', 'watermelonges', 'wink', 'yawn']
 
-GESTURE_PRICES = {k: 5 for k in GESTURE_TYPES}
+_ASSETS_JSON = Path(__file__).resolve().parents[2] / "site" / "assets.json"
+
+
+def _load_assets_json() -> dict:
+    try:
+        return json.loads(_ASSETS_JSON.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _gesture_prices_from_assets() -> dict[str, int]:
+    gestures = (_load_assets_json().get("gestures") or {})
+    out: dict[str, int] = {}
+    for key, meta in gestures.items():
+        if key.startswith("__") or not isinstance(meta, dict):
+            continue
+        price = meta.get("storePrice")
+        if price is not None:
+            out[str(key)] = int(price)
+    return out
+
+
+def _gold2tokens_items_from_assets() -> list[dict[str, int]]:
+    tokens = (_load_assets_json().get("tokens") or {})
+    bank = tokens.get("bank_v2") or tokens.get("bank") or []
+    items: list[dict[str, int]] = []
+    for row in bank:
+        if not isinstance(row, dict):
+            continue
+        gold = int(row.get("price") or row.get("gold") or 0)
+        tok = int(row.get("tokens") or 0)
+        if gold > 0 and tok > 0:
+            items.append({"gold": gold, "tokens": tok})
+    return items
+
+
+_ASSET_GESTURE_PRICES = _gesture_prices_from_assets()
+GESTURE_PRICES = {
+    g: _ASSET_GESTURE_PRICES.get(g, 5) for g in GESTURE_TYPES
+}
+GOLD2TOKENS_ITEMS: list[dict[str, int]] = _gold2tokens_items_from_assets() or [
+    {"gold": 180, "tokens": 450},
+    {"gold": 30, "tokens": 75},
+    {"gold": 10, "tokens": 25},
+    {"gold": 5, "tokens": 10},
+    {"gold": 2, "tokens": 3},
+]
+GOLD2TOKENS_BY_GOLD: dict[int, int] = {
+    int(row["gold"]): int(row["tokens"]) for row in GOLD2TOKENS_ITEMS
+}
 
 # ── Ramkalar va toshlar ───────────────────────────────────────────────────
 FRAME_TYPES_FREE = ["silver", "gold"]

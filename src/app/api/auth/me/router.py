@@ -229,14 +229,14 @@ async def update_game_username(
         try:
             from datetime import datetime, timezone
 
+            from src.app.api.ws.profile_setup import compute_age_from_birth_date
+
             ms = parse_birth_date_ms(birth_date_str)
             if ms:
                 birth_dt = datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
-                today = datetime.now(timezone.utc)
-                age = today.year - birth_dt.year - (
-                    (today.month, today.day) < (birth_dt.month, birth_dt.day)
-                )
-                user.age = age
+                valid_age = compute_age_from_birth_date(birth_date_str)
+                if valid_age is not None:
+                    user.age = valid_age
         except Exception:
             pass
 

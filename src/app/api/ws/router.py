@@ -10,7 +10,9 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from src.app.api.ws.game_manager import manager
 from src.app.api.ws.utils import parse_packet
+from src.app.core.config import load_config
 from src.app.core.jwt import verify_access_token
+from src.app.core.security.rate_limit import check_rate, ws_client_ip
 
 router = APIRouter(tags=["Game WebSocket"])
 log = logging.getLogger("spinbottle")
@@ -121,6 +123,15 @@ async def game_websocket(ws: WebSocket):
     Barcha paketlarni manager.handle() ga yo'naltiradi.
     HTML5: ?token=...&table_id=... query bilan ulanadi (xabar ketmaydi).
     """
+    settings = getattr(ws.app.state, "settings", None) or load_config()
+    ip = ws_client_ip(ws)
+    redis_url = getattr(settings, "redis_url", "") or ""
+    ws_msg_limit = int(getattr(settings, "ws_max_messages_per_10s", 80) or 80)
+
+    if not await check_rate(f"wsconn:{ip}", 40, 60, redis_url=redis_url):
+        await ws.close(code=1008, reason="too_many_connections")
+        return
+
     await ws.accept(subprotocol="binary")
 
     # DB factory ulanishi
@@ -170,6 +181,14 @@ async def game_websocket(ws: WebSocket):
                 raw = message["text"].encode("utf-8")
             if not raw:
                 continue
+
+            rate_key = f"wsmsg:{user_id or ip}"
+            if not await check_rate(
+                rate_key, ws_msg_limit, 10, redis_url=redis_url
+            ):
+                log.warning("WS rate limit: %s", rate_key)
+                await ws.close(code=1008, reason="too_many_messages")
+                break
 
             packet = parse_packet(raw)
             if not packet:

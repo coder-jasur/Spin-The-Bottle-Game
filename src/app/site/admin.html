@@ -537,30 +537,31 @@
 
             <!-- Love cocktail (g_love) -->
             <div class="card" id="love-cocktail-card">
-                <h2>🍸 Mehebbet kokteyli</h2>
+                <h2 data-i18n="admin.love_cocktail_title">🍸 Mehebbet kokteyli</h2>
                 <div id="love-cocktail-alert" class="alert"></div>
-                <p class="hint">
-                    O‘yinda sovg‘alar qatoridagi pushti kokteil. <strong>999+</strong> = cheksiz;
-                    kamroq bo‘lsa har yuborishda −1; <strong>0</strong> bo‘lsa yo‘qoladi.
+                <p class="hint" data-i18n-html="admin.love_cocktail_hint">
+                    O‘yinda sovg‘alar panelida ko‘rinadi. Aniq son ekranda shu raqam; cheksiz — 999+.
                 </p>
                 <div class="form-group">
-                    <label>Foydalanuvchi ID</label>
-                    <input type="number" id="love-cocktail-user-id" min="1" step="1" placeholder="Masalan: 42">
+                    <label data-i18n="admin.label_user_id">Foydalanuvchi ID</label>
+                    <input type="number" id="love-cocktail-user-id" min="1" step="1" data-i18n-placeholder="admin.placeholder_user_id" placeholder="Masalan: 42">
                 </div>
-                <h3 style="margin: 20px 0 10px; font-size: 1rem; color: var(--warm-a);">Berish</h3>
+                <h3 style="margin: 20px 0 10px; font-size: 1rem; color: var(--warm-a);" data-i18n="admin.love_section_give">Berish</h3>
                 <div class="form-group">
-                    <label>Qancha berish</label>
-                    <input type="number" id="love-cocktail-give-amount" min="1" step="1" value="999">
+                    <label data-i18n="admin.love_label_amount">Miqdor</label>
+                    <input type="number" id="love-cocktail-give-amount" min="1" step="1" value="100">
                 </div>
-                <button class="btn btn-primary" style="width: 100%; margin-bottom: 8px;" onclick="grantLoveCocktail()">Koktel berish</button>
+                <button class="btn btn-primary" style="width: 100%; margin-bottom: 8px;" onclick="grantLoveCocktail()" data-i18n="admin.love_btn_add">Zaxiraga qo‘shish (+)</button>
+                <button class="btn btn-accent" style="width: 100%; margin-bottom: 8px;" onclick="setLoveCocktail()" data-i18n="admin.love_btn_set">Aniq miqdor o‘rnatish (=)</button>
+                <button class="btn btn-primary" style="width: 100%; margin-bottom: 8px; background: linear-gradient(135deg,#c2185b,#e91e63);" onclick="grantLoveCocktailUnlimited()" data-i18n="admin.love_btn_unlimited">Cheksiz berish (999+)</button>
 
-                <h3 style="margin: 20px 0 10px; font-size: 1rem; color: var(--danger);">Olish</h3>
+                <h3 style="margin: 20px 0 10px; font-size: 1rem; color: var(--danger);" data-i18n="admin.love_section_take">Olish</h3>
                 <div class="form-group">
-                    <label>Qancha ayirish</label>
+                    <label data-i18n="admin.love_label_take_amount">Qancha ayirish</label>
                     <input type="number" id="love-cocktail-take-amount" min="1" step="1" value="1">
                 </div>
-                <button class="btn btn-accent" style="width: 100%; margin-bottom: 8px;" onclick="takeLoveCocktail()">Koktelni ayirish</button>
-                <button class="btn btn-danger" style="width: 100%;" onclick="clearLoveCocktail()">Hammasini olib tashlash</button>
+                <button class="btn btn-accent" style="width: 100%; margin-bottom: 8px;" onclick="takeLoveCocktail()" data-i18n="admin.love_btn_subtract">Koktelni ayirish</button>
+                <button class="btn btn-danger" style="width: 100%;" onclick="clearLoveCocktail()" data-i18n="admin.love_btn_clear_all">Hammasini olib tashlash</button>
             </div>
 
             <!-- Broadcast Form -->
@@ -759,7 +760,7 @@
     </div>
 
     <script src="/static/site_i18n.js?v=4"></script>
-    <script src="/static/admin_i18n.js?v=3"></script>
+    <script src="/static/admin_i18n.js?v=4"></script>
     <script>
         let i18n = null;
         function t(key, vars) {
@@ -1228,7 +1229,7 @@
                 alert.style.display = 'block';
                 return;
             }
-            if (operation !== 'clear') {
+            if (operation !== 'clear' && operation !== 'unlimited') {
                 const n = parseInt(String(amount), 10);
                 if (!Number.isFinite(n) || n < 1) {
                     alert.innerText = t('admin.err_amount');
@@ -1262,6 +1263,16 @@
         async function grantLoveCocktail() {
             const amountRaw = document.getElementById('love-cocktail-give-amount').value.trim();
             await _loveCocktailRequest('add', amountRaw);
+        }
+
+        async function setLoveCocktail() {
+            const amountRaw = document.getElementById('love-cocktail-give-amount').value.trim();
+            await _loveCocktailRequest('set', amountRaw);
+        }
+
+        async function grantLoveCocktailUnlimited() {
+            if (!confirm('Foydalanuvchiga cheksiz Mehebbet kokteyli (999+) berilsinmi?')) return;
+            await _loveCocktailRequest('unlimited', 0);
         }
 
         async function takeLoveCocktail() {

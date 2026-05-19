@@ -14,7 +14,6 @@ _PHOTOS_DIR = (
     Path(__file__).resolve().parents[1] / "site" / "media" / "photos"
 )
 NO_IMG = "/photos/no_img.png"
-_TG_PHOTO_PROXY_PREFIX = "https://proxy-msk.ciliz.com/tgphoto/"
 _LOCAL_TG_PHOTO_PREFIX = "/api/proxy/tgphoto/"
 
 
@@ -74,11 +73,11 @@ def _client_photo_download_url(client_photo_url: str | None) -> str | None:
         return None
     if raw.startswith("https://t.me/"):
         if _is_svg_or_html_url(raw):
-            return f"{_TG_PHOTO_PROXY_PREFIX}{raw[len('https://t.me/'):]}"
+            return f"{_LOCAL_TG_PHOTO_PREFIX}{raw[len('https://t.me/'):]}"
         return raw
     if raw.startswith("http://t.me/"):
         path = raw[len("http://t.me/") :]
-        return f"{_TG_PHOTO_PROXY_PREFIX}{path}"
+        return f"{_LOCAL_TG_PHOTO_PREFIX}{path}"
     if _is_svg_or_html_url(raw):
         return None
     return raw
@@ -103,7 +102,12 @@ def local_avatar_is_valid(avatar_url: str | None) -> bool:
         return False
 
 
-_REMOTE_NO_IMG = "https://bottle.tgspinbotlle.com/photos/no_img.png"
+# 1x1 PNG (kulrang)
+_MIN_NO_IMG_PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+    "1f15c4890000000a49444154789c63000100000500010d0a2db400000000"
+    "49454e44ae426082"
+)
 
 
 async def ensure_no_img_placeholder() -> None:
@@ -111,12 +115,8 @@ async def ensure_no_img_placeholder() -> None:
         return
     try:
         _PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
-        async with httpx.AsyncClient(follow_redirects=True) as client:
-            r = await client.get(_REMOTE_NO_IMG, timeout=20.0)
-            r.raise_for_status()
-            if _is_valid_image_bytes(r.content):
-                _NO_IMG.write_bytes(r.content)
-                log.info("no_img.png yuklandi (%s bytes)", len(r.content))
+        _NO_IMG.write_bytes(_MIN_NO_IMG_PNG)
+        log.info("no_img.png mahalliy placeholder yaratildi")
     except Exception as e:
         log.warning("no_img.png yuklab bo'lmadi: %s", e)
 

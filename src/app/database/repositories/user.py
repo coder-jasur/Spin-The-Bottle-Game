@@ -174,6 +174,7 @@ class UserRepository:
         **kwargs,
     ):
         new_ref_id = await self._generate_referral_id()
+        kwargs.pop("gift_love_stock", None)
 
         user = User(
             tg_id=tg_id,
@@ -181,6 +182,7 @@ class UserRepository:
             referred_by_id=referred_by_id,
             password=password,
             country=country,
+            gift_love_stock=0,
             **kwargs,
         )
         self.session.add(user)

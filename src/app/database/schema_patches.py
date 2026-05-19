@@ -19,6 +19,15 @@ _SCHEMA_PATCHES: tuple[str, ...] = (
     ALTER TABLE users
     ADD COLUMN IF NOT EXISTS gift_love_stock INTEGER NOT NULL DEFAULT 0
     """,
+    """
+    CREATE TABLE IF NOT EXISTS user_music_folders (
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        folder TEXT NOT NULL,
+        provider TEXT NOT NULL DEFAULT 'mv',
+        song_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+        PRIMARY KEY (user_id, folder, provider)
+    )
+    """,
 )
 
 

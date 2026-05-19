@@ -4,11 +4,12 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.core.jwt import create_access_token, create_refresh_token
 from src.app.database.repositories.user import UserRepository
+from src.app.core.security.validators import validate_username
 
 log = logging.getLogger("spinbottle.register")
 
@@ -22,10 +23,23 @@ async def get_db(request: Request) -> AsyncSession:
 
 
 class RegisterModel(BaseModel):
-    username: str
-    password: str
-    gender: str
-    ref: Optional[str] = None  # Referral ID (Telegram startapp dan keladi)
+    username: str = Field(min_length=3, max_length=32)
+    password: str = Field(min_length=6, max_length=128)
+    gender: str = Field(max_length=32)
+    ref: Optional[str] = Field(default=None, max_length=64)
+
+    @field_validator("username")
+    @classmethod
+    def _username_safe(cls, v: str) -> str:
+        clean = validate_username(v)
+        if not clean:
+            raise ValueError("username_invalid")
+        return clean
+
+    @field_validator("password")
+    @classmethod
+    def _password_strip(cls, v: str) -> str:
+        return (v or "").strip()[:128]
 
 
 @router.post("/api/auth/register")
@@ -33,7 +47,8 @@ async def register(
     request: Request, data: RegisterModel, session: AsyncSession = Depends(get_db)
 ):
     user_repo = UserRepository(session)
-    existing_user = await user_repo.get_user_by_login(data.username)
+    username = validate_username(data.username) or data.username
+    existing_user = await user_repo.get_user_by_login(username)
 
     if existing_user:
         from fastapi.responses import JSONResponse
@@ -84,7 +99,7 @@ async def register(
 
     # Create user (ref_id = referred_by_id sifatida saqlanadi)
     user = await user_repo.add_user(
-        login=data.username,
+        login=username,
         gender=normalized_gender,
         password=data.password,
         country=user_country,

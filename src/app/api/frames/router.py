@@ -319,7 +319,8 @@ _WELCOME_CATEGORY_COLUMN_MAP = {
     "gestures":   "emotion",
     "like_price": "harem_price",
     "harem_price": "harem_price",
-    "price":      "expense",
+    # «Самые дорогие» = uxajor narxi (sovg'a expense emas)
+    "price":      "harem_price",
 }
 
 

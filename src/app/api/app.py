@@ -95,6 +95,17 @@ async def startup_application(
         print(f"[WARN] Avatar tozalash: {e}", flush=True)
 
     try:
+        from src.app.api.music.service import redis_cache_status
+
+        rc = await redis_cache_status()
+        if rc.get("redis_connected"):
+            print("[OK] Musiqa cache: Redis", flush=True)
+        elif rc.get("enabled"):
+            print("[WARN] Musiqa cache: Redis ulanmadi, RAM fallback", flush=True)
+    except Exception as e:
+        print(f"[WARN] Musiqa Redis: {e}", flush=True)
+
+    try:
         from src.app.api.music.router import warm_music_catalog_cache
 
         n_tracks = await warm_music_catalog_cache()
@@ -103,11 +114,32 @@ async def startup_application(
     except Exception as e:
         print(f"[WARN] Musiqa katalogi: {e}", flush=True)
 
+    try:
+        from src.app.api.music.service import (
+            rapidapi_yt_enabled,
+            rapidapi_yt_runtime_status,
+            ytdlp_log_startup_config,
+        )
+
+        if rapidapi_yt_enabled():
+            st = await rapidapi_yt_runtime_status()
+            print(
+                f"[OK] Musiqa (audio): RapidAPI YT MP3 ({st.get('host')}); "
+                f"to'liq trek. Status: /api_music/rapidapi_yt_status",
+                flush=True,
+            )
+        else:
+            ytdlp_log_startup_config()
+    except Exception as e:
+        print(f"[WARN] Musiqa provayder config: {e}", flush=True)
+
     app.state.db = db
     app.state.user_cache = {}
     app.state.bot = None
     app.state.dp = None
     app.state.bot_poll_task = None
+    app.state.bot_shutdown_event = asyncio.Event()
+    app.state.shutting_down = False
 
     if getattr(settings, "bot_token", None):
         try:
@@ -148,8 +180,16 @@ async def startup_application(
                 except Exception as e:
                     print(f"[WARN] Mini App menu sozlanmadi: {e}", flush=True)
             if start_bot_polling and settings.telegram_use_polling:
+                from src.app.bot.polling_runner import run_bot_polling
+
+                app.state.bot_shutdown_event.clear()
                 app.state.bot_poll_task = asyncio.create_task(
-                    dp.start_polling(bot)
+                    run_bot_polling(
+                        bot,
+                        dp,
+                        shutdown_event=app.state.bot_shutdown_event,
+                    ),
+                    name="telegram-polling",
                 )
                 print("[OK] Telegram bot polling ishga tushdi (main.py).", flush=True)
             elif start_bot_polling:
@@ -182,6 +222,9 @@ async def startup_application(
 async def shutdown_application(app: FastAPI) -> None:
     """Bot polling va DB ulanishini yopish."""
     import asyncio
+    from contextlib import suppress
+
+    app.state.shutting_down = True
 
     try:
         from src.app.services.scheduled_backup import stop_scheduled_backup
@@ -190,23 +233,34 @@ async def shutdown_application(app: FastAPI) -> None:
     except Exception:
         pass
 
+    shutdown_ev = getattr(app.state, "bot_shutdown_event", None)
+    if shutdown_ev:
+        shutdown_ev.set()
+
+    dp = getattr(app.state, "dp", None)
+    try:
+        from src.app.bot.polling_runner import stop_bot_polling
+
+        await stop_bot_polling(dp)
+    except Exception:
+        pass
+
     bot_poll_task = getattr(app.state, "bot_poll_task", None)
     if bot_poll_task and not bot_poll_task.done():
         bot_poll_task.cancel()
-        try:
+        with suppress(asyncio.CancelledError):
             await bot_poll_task
-        except asyncio.CancelledError:
-            pass
+
     bot = getattr(app.state, "bot", None)
     if bot:
-        try:
+        with suppress(Exception):
             await bot.session.close()
-        except Exception:
-            pass
+
     db = getattr(app.state, "db", None)
     if db:
-        await db.engine.dispose()
-    print("Database ulanishi yopildi.", flush=True)
+        with suppress(Exception):
+            await db.engine.dispose()
+    print("[OK] Server to'xtatildi (DB yopildi).", flush=True)
 
 
 @asynccontextmanager
@@ -223,7 +277,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan, title="SpinBottle API")
 
-app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+_settings_boot = load_config()
+_trusted = _settings_boot.trusted_hosts
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_trusted)
+
+from src.app.core.security.headers import SecurityHeadersMiddleware
+from src.app.core.security.rate_limit import RateLimitMiddleware
+
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(
+    RateLimitMiddleware,
+    enabled=_settings_boot.rate_limit_enabled,
+    redis_url=_settings_boot.redis_url,
+)
 
 # `allow_origins=["*"]` + `allow_credentials=True` — brauzer cookie yubormasligi mumkin (CORS).
 # Regex orqali kelgan Origin'ni aks ettiramiz — `/api/auth/refresh` cookie bilan ishlashi uchun.
