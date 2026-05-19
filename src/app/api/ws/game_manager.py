@@ -4976,9 +4976,17 @@ class GameManager:
     ) -> dict[str, int]:
         """Reyting o‘rinlari va `top` ni payload ga yozadi."""
         ranks, in_top = await self._fetch_profile_ranks(db_id)
-        payload["top"] = in_top
         for key, val in ranks.items():
             payload[key] = val
+        payload["kiss_rank"] = int(ranks.get("total_kisses_rank") or 0)
+        payload["music_rank"] = int(ranks.get("dj_score_rank") or 0)
+        payload["smile_rank"] = int(ranks.get("gestures_rank") or 0)
+        if not in_top:
+            in_top = any(
+                1 <= int(ranks.get(k) or 0) <= self.TOP_RANK_MAX
+                for k, _ in self._PROFILE_RANK_COLUMNS
+            )
+        payload["top"] = bool(in_top)
         return ranks
 
     async def _enrich_get_profile_payload(
