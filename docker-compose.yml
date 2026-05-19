@@ -127,6 +127,7 @@ services:
       - "443:443"
     volumes:
       - ./docker/nginx/app.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./src/app/site/bottle/bundle:/var/www/bottle/bundle:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - ./certbot/www:/var/www/certbot:ro
     networks:

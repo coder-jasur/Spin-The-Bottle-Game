@@ -485,6 +485,20 @@ async def smart_asset_handler(folder: str, filename: str, subfolder: str = None)
     if folder in ["api", "ws"] or (folder and folder.startswith("api_")):
         return Response(status_code=404)
 
+    # dlg100 / 80 / 120 — fayllar papka ichida tekis; gifts/ ostida emas
+    if folder.startswith("dlg") or folder.isdigit():
+        flat = bottle_bundle_dir / folder / filename
+        if flat.exists():
+            return FileResponse(str(flat))
+        if filename.endswith(".webp"):
+            alt = flat.with_suffix(".png")
+            if alt.exists():
+                return FileResponse(str(alt))
+        elif filename.endswith(".png"):
+            alt = flat.with_suffix(".webp")
+            if alt.exists():
+                return FileResponse(str(alt))
+
     actual_subfolder = subfolder or "others"
     if not subfolder:
         for prefix, sub in MAPPING.items():
