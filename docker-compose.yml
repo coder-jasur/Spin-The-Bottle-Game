@@ -12,6 +12,7 @@
 #   /server.json   WS/API URL (joriy domen)
 #
 # Lokal test (nginx siz, to'g'ridan :8000):
+#   media/photos va media/stories hostda saqlanadi (volume); git pull ularni o'chirmaydi.
 #   docker compose up -d --build bot postgres redis api nginx-files
 #   # bot ports qatorini oching (quyida) → http://localhost:8000/
 
@@ -102,6 +103,9 @@ services:
     volumes:
       - telegram-bot-api-data:/var/lib/telegram-bot-api
       - app-cache:/app/.cache
+      # Profil rasmlari va story fayllari — git pull / rebuild da saqlanadi
+      - ./src/app/site/media/photos:/app/src/app/site/media/photos
+      - ./src/app/site/media/stories:/app/src/app/site/media/stories
       # Lokal dev: kod mount (productionda yoqing)
       # - .:/app
     depends_on:

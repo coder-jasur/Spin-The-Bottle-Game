@@ -23,7 +23,10 @@ logs/tunnel.err.log
 logs/tunnel.out.log
 logs/tunnel.url
 
-# Telegram yuklangan profil rasmlari (runtime)
-src/app/site/media/photos/user_*.jpg
-src/app/site/media/photos/user_*.webp
-src/app/site/media/photos/user_*.png
+# Runtime media — git pull/deploy da serverdagi fayllar o'chmasin
+src/app/site/media/photos/*
+!src/app/site/media/photos/.gitkeep
+!src/app/site/media/photos/no_img.png
+
+src/app/site/media/stories/*
+!src/app/site/media/stories/.gitkeep
