@@ -72,7 +72,7 @@
   </div>
   <div id="root"></div>
 
-  <script src="./static/tg_auto_auth.js?v=17"></script>
+  <script src="./static/tg_auto_auth.js?v=18"></script>
   <script src="./static/youtube_embed_fix.js?v=5"></script>
   <script src="./static/g_love_console.js?v=8"></script>
   <script>
@@ -99,7 +99,7 @@
         var s = document.createElement("script");
         s.type = "module";
         s.crossOrigin = "anonymous";
-        s.src = "./assets/index-1776688741387-BUz5E6og.js?v=74";
+        s.src = "./assets/index-1776688741387-BUz5E6og.js?v=77";
         s.onload = function () { setTimeout(hideLoader, 1500); };
         s.onerror = function () { setStatus("JS yuklanmadi. Serverni qayta ishga tushiring."); };
         document.head.appendChild(s);
@@ -114,6 +114,9 @@
             window.Telegram.WebApp.expand();
           }
         } catch (e) { /* ignore */ }
+        if (window.TgAutoAuth && window.TgAutoAuth.captureReferralParam) {
+          window.TgAutoAuth.captureReferralParam();
+        }
 
         if (hasGameSessionInUrl()) {
           loadGameBundle();
@@ -195,8 +198,17 @@
           }
       });
 
-      const BOT_URL = 'https://t.me/SpinbottleTgBot/spin_bottle';
+      let BOT_BASE = 'https://t.me/SpinbottleTgBot/spin_bottle';
+      let SHARE_TEXT = 'Please help me get a free airdrop up to $1 worth.\nYou just need to collect 50 kisses in this game on Telegram.';
       let referralId = null;
+
+      fetch('/api/config/telegram-miniapp', { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.mini_app_base_url) BOT_BASE = d.mini_app_base_url.replace(/\/?$/, '');
+          if (d && d.share_text) SHARE_TEXT = d.share_text;
+        })
+        .catch(function () { /* fallback BOT_BASE */ });
 
       function showToast(msg) {
           const t = document.getElementById('ref-toast');
@@ -206,15 +218,94 @@
           setTimeout(() => t.classList.remove('show'), 3000);
       }
 
+      // Referral count ni DOM ga yozish (React render qilgandan keyin)
+      var _referralCount = 0;
+
+      function _writeReferralCount(count) {
+          // React render qilgan elementni topamiz
+          // "Приглашен" / "Taklif" / "Invited" kabi text bor elementni qidirish
+          var keywords = ['\u041f\u0440\u0438\u0433\u043b\u0430\u0448\u0435\u043d', 'Taklif', 'Invited', '\u0414\u0430\u0432\u0435\u0442'];
+          var found = false;
+          // 1-usul: settings__icon--invite yonidagi .settings__value yoki span
+          var inviteIcons = document.querySelectorAll('.settings__icon--invite');
+          inviteIcons.forEach(function(icon) {
+              var parent = icon.closest('.settings__item, [class*="settings__item"], li, [class*="item"]');
+              if (parent) {
+                  var valueEl = parent.querySelector('.settings__value, [class*="value"], [class*="count"], [class*="badge"]');
+                  if (!valueEl) {
+                      // span yoki div lardan oxirgisini olish
+                      var spans = parent.querySelectorAll('span');
+                      if (spans.length > 0) valueEl = spans[spans.length - 1];
+                  }
+                  if (valueEl && !found) {
+                      valueEl.textContent = count;
+                      found = true;
+                  }
+              }
+          });
+          // 2-usul: text orqali qidirish
+          if (!found) {
+              var allEls = document.querySelectorAll('div, li, button, a');
+              for (var i = 0; i < allEls.length; i++) {
+                  var el = allEls[i];
+                  var text = el.textContent || '';
+                  var hasKeyword = keywords.some(function(k) { return text.includes(k); });
+                  if (hasKeyword && el.children.length > 0 && el.children.length < 6) {
+                      // Ota element ichidagi oxirgi span/div ni topamiz (counter)
+                      var children = el.querySelectorAll('span, div');
+                      for (var j = children.length - 1; j >= 0; j--) {
+                          var child = children[j];
+                          var childText = child.textContent.trim();
+                          // Faqat raqam bo'lgan elementni o'zgartiramiz
+                          if (/^\d+$/.test(childText) && !found) {
+                              child.textContent = count;
+                              found = true;
+                              break;
+                          }
+                      }
+                      if (found) break;
+                  }
+              }
+          }
+      }
+
+      // MutationObserver: React render qilganda avtomatik yangilash
+      var _referralObserver = new MutationObserver(function() {
+          if (_referralCount > 0) {
+              _writeReferralCount(_referralCount);
+          }
+      });
+      _referralObserver.observe(document.body, { childList: true, subtree: true });
+
+      function applyReferralApi(data) {
+          if (!data || !data.success) return;
+          if (data.referral_id) referralId = data.referral_id;
+          if (typeof data.count === 'number') {
+              _referralCount = data.count;
+              _writeReferralCount(_referralCount);
+              // Bir necha marta urinib ko'rish (React lazy render uchun)
+              [500, 1500, 3000, 6000].forEach(function(ms) {
+                  setTimeout(function() { _writeReferralCount(_referralCount); }, ms);
+              });
+          }
+          if (data.telegram_mini_app_url) {
+              var u = data.telegram_mini_app_url.split('?')[0];
+              if (u) BOT_BASE = u;
+          } else if (data.telegram_miniapp_bot) {
+              var slug = data.telegram_miniapp_slug || 'spin_bottle';
+              BOT_BASE = 'https://t.me/' + data.telegram_miniapp_bot + '/' + slug;
+          }
+      }
+
       function fetchReferralData() {
           const token = localStorage.getItem('accessToken');
-          fetch('/frames/referrals', {
-              headers: { 'Authorization': `Bearer ${token}` }
+          fetch('/api/frames/referrals', {
+              credentials: 'same-origin',
+              headers: { 'Authorization': 'Bearer ' + (token || '') }
           })
           .then(r => r.json())
-          .then(data => {
-              if (data.success) referralId = data.referral_id;
-          });
+          .then(applyReferralApi)
+          .catch(function(e) { console.warn('[Referral] fetch error:', e); });
       }
 
       function shareReferral() {
@@ -223,8 +314,8 @@
               fetchReferralData();
               return;
           }
-          const shareUrl = `${BOT_URL}?startapp=${referralId}`;
-          const shareText = "Please help me get a free airdrop up to $1 worth.\nYou just need to collect 50 kisses in this game on Telegram.";
+          const shareUrl = `${BOT_BASE}?startapp=${referralId}`;
+          const shareText = SHARE_TEXT;
           if (window.Telegram && window.Telegram.WebApp) {
               const tgUrl = `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(shareText)}`;
               window.Telegram.WebApp.openTelegramLink(tgUrl);

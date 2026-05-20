@@ -48,6 +48,14 @@ async def startup_application(
 
     settings = settings or load_config()
     app.state.settings = settings
+
+    from src.app.services.telegram_bot_info import warm_bot_username_cache
+
+    try:
+        await warm_bot_username_cache(app)
+    except Exception as e:
+        print(f"[WARN] Telegram getMe (bot username): {e}", flush=True)
+
     dsn = settings.construct_postgresql_url()
     db = Database(dsn)
 
@@ -485,6 +493,7 @@ def _prioritize_router_routes(application: FastAPI, router) -> None:
 
 
 _prioritize_router_routes(app, music_router)
+_prioritize_router_routes(app, frames_router)
 
 
 # ── Cloudflare RUM ────────────────────────────────────────────────────────

@@ -553,44 +553,26 @@ async def frames_rankings(
 
 @router.get("/api/frames/referrals")
 @router.get("/frames/referrals")
+@router.get("/api/api/frames/referrals")
 async def referrals(request: Request, session: AsyncSession = Depends(get_db)):
-    from src.app.core.jwt import verify_access_token
     from src.app.database.repositories.user import UserRepository
 
-    token = request.cookies.get("device_user_ids")
-    print(f">>> REFERRALS DEBUG: Raw Token from cookie: {token}", flush=True)
-    
-    payload = verify_access_token(token) if token else None
-
-    # Agar JWT emas bo'lsa, legacy formatni tekshiramiz
-    if not payload and token:
-        try:
-            import json
-            import urllib.parse
-            decoded = urllib.parse.unquote(token)
-            if decoded.startswith("[") and decoded.endswith("]"):
-                ids = json.loads(decoded)
-                if ids and isinstance(ids, list):
-                    payload = {"id": int(ids[0])}
-                    print(f">>> REFERRALS DEBUG: Legacy user ID found: {payload['id']}", flush=True)
-        except:
-            print(">>> REFERRALS DEBUG: Token JWT emas va legacy formatda ham emas", flush=True)
-
+    payload = _frames_jwt_payload(request)
     count = 0
     referral_id = None
     if payload and payload.get("id"):
         user_repo = UserRepository(session)
-        user = await user_repo.get_user_by_id(payload.get("id"))
+        user = await user_repo.get_user_by_id(int(payload["id"]))
         if user:
-            count = user.invited_guests
+            count = int(user.invited_guests or 0)
             referral_id = user.referral_id
-            print(f">>> REFERRALS DEBUG: Found user {user.id}, invited_guests: {count}, referral_id: {referral_id}", flush=True)
-        else:
-            print(f">>> REFERRALS DEBUG: User ID {payload.get('id')} database dan topilmadi", flush=True)
-    else:
-        print(">>> REFERRALS DEBUG: User ID aniqlanmadi (token xato yoki yo'q)", flush=True)
 
-    return {"success": True, "count": count, "referrals": [], "referral_id": referral_id}
+    return {
+        "success": True,
+        "count": count,
+        "referrals": [],
+        "referral_id": referral_id,
+    }
 
 
 @router.post("/api/frames/increment-status-view")
