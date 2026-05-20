@@ -23,11 +23,7 @@ _SCHEMA_PATCHES: tuple[str, ...] = (
     ALTER TABLE users
     ADD COLUMN IF NOT EXISTS harem_courts_received BIGINT NOT NULL DEFAULT 0
     """,
-    """
-    UPDATE users
-    SET harem_courts_received = GREATEST(harem_price - 1, 0)
-    WHERE harem_courts_received = 0 AND harem_price > 1
-    """,
+    # Eski migratsiya olib tashlandi: harem_price ≠ 2-yurak yig'indisi; noto'g'ri raqam berardi.
     """
     ALTER TABLE users
     ADD COLUMN IF NOT EXISTS harem_owner_paid_price INTEGER NOT NULL DEFAULT 0

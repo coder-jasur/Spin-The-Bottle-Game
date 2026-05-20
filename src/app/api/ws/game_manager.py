@@ -304,14 +304,6 @@ class GameManager:
             return f"Bu stoldan haydalgansiz. {m} daqiqadan keyin qayta kirishingiz mumkin."
         return f"Bu stoldan haydalgansiz. {remain} soniyadan keyin qayta kirishingiz mumkin."
 
-    def _harem_owner_paid_fallback(self, target: Player) -> int:
-        """Eski yozuvlar: to'langan summa saqlanmagan bo'lsa taxmin."""
-        paid = int(getattr(target, "harem_owner_paid_price", 0) or 0)
-        if paid > 0:
-            return paid
-        hp = max(1, int(getattr(target, "harem_price", 1) or 1))
-        return max(1, hp - 1)
-
     async def _adjust_harem_influence_score(
         self,
         target_db_id: int,
@@ -345,18 +337,15 @@ class GameManager:
     async def _apply_harem_court_to_target(
         self, target: Player, buyer_db: int, paid: int
     ) -> None:
-        """Nishonga uxajorlik: eski hissani ayir, yangisini qo'sh."""
+        """Nishonga yangi uxajorlik: faqat shu to'lov 2-yurakka qo'shiladi.
+
+        Eski uxajorni bu yerda ayirmaymiz — faqat u boshqa nishonga o'tganda
+        `_release_prior_harem_targets` orqali ayiriladi.
+        """
         paid = max(1, int(paid or 1))
         target_db = int(target.db_id or 0)
         if not target_db:
             return
-
-        prev_owner = int(target.harem_owner_id or 0)
-        if prev_owner and prev_owner != int(buyer_db):
-            prev_paid = self._harem_owner_paid_fallback(target)
-            await self._adjust_harem_influence_score(
-                target_db, -prev_paid, target
-            )
 
         target.harem_owner_id = int(buyer_db)
         target.harem_owner_paid_price = paid
@@ -382,21 +371,15 @@ class GameManager:
         """
         if not target_db_id:
             return
-        paid_eff = max(1, int(paid or 0))
+        paid_eff = max(0, int(paid or 0))
+        if paid_eff <= 0 and live:
+            paid_eff = int(getattr(live, "harem_owner_paid_price", 0) or 0)
         if paid_eff <= 0:
-            if live:
-                paid_eff = self._harem_owner_paid_fallback(live)
-            else:
-                try:
-                    async with self._db() as repo:
-                        db_u = await repo.get_user_with_wallet(int(target_db_id))
-                    if db_u:
-                        paid_eff = self._harem_owner_paid_fallback(
-                            Player.from_db(None, db_u)
-                        )
-                except Exception as e:
-                    log.debug("_revoke_harem_court_from_target load: %s", e)
-                    paid_eff = 1
+            log.warning(
+                "harem revoke skip: paid noma'lum (target_db=%s) — noto'g'ri ayirishdan qochildi",
+                target_db_id,
+            )
+            return
         await self._adjust_harem_influence_score(
             int(target_db_id), -paid_eff, live
         )
@@ -3998,7 +3981,10 @@ class GameManager:
 
         for tid, paid in cleared_pairs:
             live = self._find_player_by_db_id(int(tid))
-            await self._revoke_harem_court_from_target(int(tid), paid, live)
+            revoke_paid = int(paid or 0)
+            if live and revoke_paid <= 0:
+                revoke_paid = int(getattr(live, "harem_owner_paid_price", 0) or 0)
+            await self._revoke_harem_court_from_target(int(tid), revoke_paid, live)
             if live:
                 live.harem_owner_id = 0
                 live.harem_owner_paid_price = 0
@@ -6489,9 +6475,9 @@ class GameManager:
     _LEGACY_TOPS_COL_MAP = {
         "total_kisses": "kisses",
         "dj_score": "dj",
-        # TOP tab `price` — profil «1 yurak» = users.expense
-        "price": "expense",
-        # TOP tab `harem_price` — profil «2 yurak» = uxajor to'lovlari yig'indisi
+        # TOP «Самые дорогие» (1 yurak) — court narxi (keyingi uxajorlik narxi)
+        "price": "harem_price",
+        # TOP (2 yurak) — uxajor to'lovlari yig'indisi (profil 2-yurak bilan bir xil)
         "harem_price": "harem_courts_received",
         # «Emotsiyalar» reytingi — faqat users.emotion (game_gesture +1)
         "gestures": "emotion",
