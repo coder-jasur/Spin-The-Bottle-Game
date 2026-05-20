@@ -77,6 +77,21 @@ class GameRepository:
         await self.session.execute(stmt)
         await self.session.commit()
 
+    async def add_owned_decor_item(self, user_id: int, item_id: str) -> dict[str, int]:
+        """Sotib olingan ramka/tosh — qayta kirganda ham inventarda qoladi."""
+        key = str(item_id or "").strip().lower()
+        if not key:
+            return {}
+        row = await self.session.get(User, int(user_id))
+        if not row:
+            return {}
+        raw = row.owned_decor_items
+        owned: dict[str, int] = dict(raw) if isinstance(raw, dict) else {}
+        owned[key] = max(int(owned.get(key, 0) or 0), 1)
+        row.owned_decor_items = owned
+        await self.session.commit()
+        return owned
+
     async def clear_harem_owner_except(
         self, owner_db_id: int, except_user_id: int = 0
     ) -> list[tuple[int, int]]:

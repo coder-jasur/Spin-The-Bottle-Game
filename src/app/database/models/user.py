@@ -72,6 +72,10 @@ class User(Base):
 
     frame: Mapped[str] = mapped_column(Text, server_default="", nullable=False)
     stone: Mapped[str] = mapped_column(Text, server_default="", nullable=False)
+    # Sotib olingan ramka/toshlar: {"ruby": 1, "emerald": 1, ...}
+    owned_decor_items: Mapped[dict] = mapped_column(
+        JSON, server_default="{}", nullable=False
+    )
     status_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     zodiac_sign: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_verified: Mapped[bool] = mapped_column(

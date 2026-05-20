@@ -29,6 +29,10 @@ _SCHEMA_PATCHES: tuple[str, ...] = (
     """,
     """
     ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS owned_decor_items JSONB NOT NULL DEFAULT '{}'::jsonb
+    """,
+    """
+    ALTER TABLE users
     ADD COLUMN IF NOT EXISTS harem_courts_received BIGINT NOT NULL DEFAULT 0
     """,
     # Eski migratsiya olib tashlandi: harem_price ≠ 2-yurak yig'indisi; noto'g'ri raqam berardi.

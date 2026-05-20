@@ -36,6 +36,8 @@ from src.app.api.ws.constants import (
     DRINK_IDS_RECEIVER_HEART_PLUS_1,
     DRINK_PRICES,
     DRINK_TYPES,
+    FRAME_TYPES,
+    STONE_TYPES,
     GESTURE_PRICES,
     GESTURE_TYPES,
     GOLD2TOKENS_BY_GOLD,
@@ -5439,6 +5441,18 @@ class GameManager:
         except Exception as e:
             log.error(f"User update DB xatosi: {e}")
 
+    @staticmethod
+    def _is_persistable_decor_item(item_id: str) -> bool:
+        key = str(item_id or "").strip().lower()
+        return key in FRAME_TYPES or key in STONE_TYPES
+
+    async def _db_add_owned_decor(self, db_id: int, item_id: str) -> None:
+        try:
+            async with self._db() as repo:
+                await repo.add_owned_decor_item(int(db_id), item_id)
+        except Exception as e:
+            log.error("owned_decor save DB: %s", e)
+
     def find_player_by_db_id(self, db_id: int) -> Optional[Player]:
         """Onlayn o'yinchini DB id bo'yicha topish (to'lovdan keyin sinxron)."""
         if not db_id:
@@ -6883,16 +6897,21 @@ class GameManager:
         if not ok:
             return
 
+        store_key = canon if self._is_persistable_decor_item(canon) else str(item)
+
         if item in BOOSTER_TYPES:
             player.boosters.append(item)
-        player.items[item] = player.items.get(item, 0) + 1
+        player.items[store_key] = player.items.get(store_key, 0) + 1
+
+        if player.db_id and self._is_persistable_decor_item(store_key):
+            await self._db_add_owned_decor(int(player.db_id), store_key)
 
         await self.send_to(
             player,
             {
                 "type": "item_purchase",
                 "ok": True,
-                "item": item,
+                "item": store_key,
                 "items": self._items_for_client(player),
                 "gift_love_stock": self._gift_love_stock_authoritative(player),
                 "ts": self._ts(),

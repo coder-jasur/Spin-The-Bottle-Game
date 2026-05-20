@@ -200,6 +200,29 @@ class Player:
             inner["items"] = {GIFT_LOVE_ITEM_ID: love_n}
         return {"viewer": inner}
 
+    def apply_owned_decor_from_db(self, db_user) -> None:
+        """DB dagi sotib olingan ramka/toshlarni `items` ga (muddatsiz egalik)."""
+        owned = getattr(db_user, "owned_decor_items", None)
+        self.merge_owned_decor_items(owned if isinstance(owned, dict) else None)
+        # Taqilgan ramka/tosh ham doim tanlashda ochiq bo‘lsin
+        for key in (
+            str(getattr(db_user, "frame", None) or "").strip().lower(),
+            str(getattr(db_user, "stone", None) or "").strip().lower(),
+        ):
+            if key:
+                self.items[key] = max(int(self.items.get(key, 0) or 0), 1)
+
+    def merge_owned_decor_items(self, owned: dict | None) -> None:
+        if not isinstance(owned, dict):
+            return
+        for key, cnt in owned.items():
+            k = str(key or "").strip().lower()
+            if not k:
+                continue
+            n = int(cnt or 0)
+            if n > 0:
+                self.items[k] = max(int(self.items.get(k, 0) or 0), n)
+
     def grant_default_owned_items(self) -> None:
         """Klient `items[id] >= 1` bo‘lsa dekor/sovga/stil «ochilgan» deb qabul qiladi.
         Mehmon ham ramka tanlash oynasida bepul ramkalarni ko‘ra olsin; VIP uchun
@@ -413,6 +436,7 @@ class Player:
         p._achievement_notified = dict(p.achievements)
 
         p.grant_default_owned_items()
+        p.apply_owned_decor_from_db(db_user)
 
         love_stock = int(getattr(db_user, "gift_love_stock", 0) or 0)
         if love_stock > 0:
