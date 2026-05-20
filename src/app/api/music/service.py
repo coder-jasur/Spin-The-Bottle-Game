@@ -402,6 +402,10 @@ async def _try_search_paths(query: str, limit: int) -> Any | None:
 async def rapidapi_yt_search_async(
     query: str, limit: int, track_type: str | None
 ) -> list[dict[str, Any]]:
+    if (track_type or "").strip().lower() == "movie":
+        if ytdlp_available():
+            return await ytdlp_search_async(query, limit, track_type)
+        return []
     if not rapidapi_yt_enabled():
         return []
     q = (query or "").strip() or _popular_query()
@@ -518,6 +522,8 @@ async def rapidapi_yt_mp3_url_async(video_id: str) -> str | None:
 async def rapidapi_yt_videos_by_ids_async(
     ids: list[str], track_type: str | None
 ) -> list[dict[str, Any]]:
+    if (track_type or "").strip().lower() == "movie":
+        return []
     out: list[dict[str, Any]] = []
     for raw in ids:
         vid = normalize_youtube_id(raw)

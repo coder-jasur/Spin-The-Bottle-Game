@@ -105,6 +105,22 @@ async def _telegram_auth_impl(
 
     if user:
         patch = {}
+        from src.app.core.geo import (
+            client_ip,
+            country_code_from_ip,
+            country_needs_geo_refresh,
+        )
+
+        ip = client_ip(request)
+        detected_country = country_code_from_ip(ip)
+        if detected_country and country_needs_geo_refresh(user.country):
+            patch["country"] = detected_country
+        elif (
+            detected_country
+            and (user.country or "").strip().upper() == "UZBEKISTAN"
+            and detected_country != "UZBEKISTAN"
+        ):
+            patch["country"] = detected_country
         if session_factory and avatar_needs_telegram_sync(user.avatar_url):
             asyncio.create_task(
                 _background_sync_telegram_avatar(
@@ -146,16 +162,12 @@ async def _telegram_auth_impl(
             secrets.choice(string.ascii_letters + string.digits) for _ in range(12)
         )
 
-        client_ip = (
-            request.headers.get("X-Forwarded-For", request.client.host if request.client else "127.0.0.1")
-            .split(",")[0]
-            .strip()
-        )
-        from src.app.core.geo import get_country_by_ip
+        from src.app.core.geo import client_ip, country_code_from_ip
 
-        user_country = get_country_by_ip(client_ip)
-        if user_country == "Unknown":
-            user_country = "Uzbekistan"
+        ip = client_ip(request)
+        user_country = country_code_from_ip(ip)
+        if not user_country:
+            log.warning("TG_AUTH new user: mamlakat aniqlanmadi ip=%s tg_id=%s", ip, data.tg_id)
 
         tg_handle = (data.username or "").strip().lstrip("@")
         user = await user_repo.add_user(
@@ -231,6 +243,9 @@ async def _telegram_auth_impl(
         user.id,
         language_code=user.language_code,
         telegram_language_code=data.language_code,
+        referral_id=user.referral_id,
+        bot_username=settings.telegram_miniapp_bot,
+        mini_slug=settings.telegram_miniapp_slug,
     )
 
     response_data = {
@@ -279,7 +294,15 @@ async def game_entry(request: Request, session: AsyncSession = Depends(get_db)):
             status_code=404,
         )
 
-    path = build_game_index_path(request, user.id, language_code=user.language_code)
+    settings = load_config()
+    path = build_game_index_path(
+        request,
+        user.id,
+        language_code=user.language_code,
+        referral_id=user.referral_id,
+        bot_username=settings.telegram_miniapp_bot,
+        mini_slug=settings.telegram_miniapp_slug,
+    )
     return Response(
         content=json.dumps({"success": True, "redirectUrl": path}),
         media_type="application/json",

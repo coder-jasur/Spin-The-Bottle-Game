@@ -2872,151 +2872,188 @@
     "__store": [
       {
         "id": "amber",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "amethyst",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "angel",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "carameldecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "cardsdecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "chipsdecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "cinemadecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "daydecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "demon",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "diamond",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "discodecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "eastdecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "egyptdecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "emerald",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "fruitjellydecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "gold",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "greendecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "hatreddecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "icedecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "lavadecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "lovedecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "marsdecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "naturedecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "nightdecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "pearls",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "platinum",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "rockdecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "romedecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "ruby",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "sapphire",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "silver",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "stonedecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "theatredecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "topaz",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "venusdecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "violetdecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       },
       {
         "id": "westdecor",
-        "cond": "pass"
+        "cond": "pass_buy",
+        "storePrice": 500
       }
     ]
   },
@@ -38491,8 +38528,8 @@
       "dlg:decor_selection:desc:empty": "Profil şəklin və istifadəçi adın bər-bəzəksiz olsun",
       "dlg:decor_selection:desc:league_item": "Bu bər-bəzəkdən istifadə etmək üçün tələb olunan liqada yer al",
       "dlg:decor_selection:desc:league_set": "Bu bər-dəstdən istifadə etmək üçün tələb olunan liqada yer al",
-      "dlg:decor_selection:desc:pass": "Mövsümi mükafat kimi alına bilər",
-      "dlg:decor_selection:desc:pass_buy": "Mövsüm təyin edildi. Satın alına bilər",
+      "dlg:decor_selection:desc:pass": "❤️ ilə alına bilər",
+      "dlg:decor_selection:desc:pass_buy": "❤️ ilə alına bilər",
       "dlg:decor_selection:title:empty": "Bər-bəzəksiz",
       "dlg:decor_selection:title:item": "Tərz %0",
       "dlg:decor_selection:title:set": "Dəst %0",
@@ -42542,8 +42579,8 @@
       "dlg:decor_selection:desc:empty": "Leave the profile pic and user name without styling",
       "dlg:decor_selection:desc:league_item": "Reach the required league to use this styling",
       "dlg:decor_selection:desc:league_set": "Reach the required league to use this set",
-      "dlg:decor_selection:desc:pass": "Can be received as a seasonal award",
-      "dlg:decor_selection:desc:pass_buy": "Season set. Available for purchase",
+      "dlg:decor_selection:desc:pass": "Can be purchased with ❤️",
+      "dlg:decor_selection:desc:pass_buy": "Can be purchased with ❤️",
       "dlg:decor_selection:title:empty": "No styling",
       "dlg:decor_selection:title:item": "Styling %0",
       "dlg:decor_selection:title:set": "Set %0",
@@ -46593,8 +46630,8 @@
       "dlg:decor_selection:desc:empty": "Оставить аватар и имя игрока без украшений",
       "dlg:decor_selection:desc:league_item": "Дойди до нужной лиги в соревновании, чтобы использовать это украшение",
       "dlg:decor_selection:desc:league_set": "Дойди до нужной лиги в соревновании, чтобы использовать этот набор",
-      "dlg:decor_selection:desc:pass": "Можно получить в качестве награды сезона",
-      "dlg:decor_selection:desc:pass_buy": "Сезонный набор. Можно приобрести",
+      "dlg:decor_selection:desc:pass": "Можно купить за ❤️",
+      "dlg:decor_selection:desc:pass_buy": "Можно купить за ❤️",
       "dlg:decor_selection:title:empty": "Без украшений",
       "dlg:decor_selection:title:item": "Украшение %0",
       "dlg:decor_selection:title:set": "Набор %0",
@@ -50644,8 +50681,8 @@
       "dlg:decor_selection:desc:empty": "Profil resmini ve kullanıcı adını stil uygulamadan bırakın",
       "dlg:decor_selection:desc:league_item": "Bu stili kullanmak için gerekli lige ulaşın",
       "dlg:decor_selection:desc:league_set": "Bu seti kullanmak için gerekli lige ulaşın",
-      "dlg:decor_selection:desc:pass": "Sezonluk ödül olarak alınabilir",
-      "dlg:decor_selection:desc:pass_buy": "Sezon Seti Satın alım için uygun",
+      "dlg:decor_selection:desc:pass": "❤️ ile satın alınabilir",
+      "dlg:decor_selection:desc:pass_buy": "❤️ ile satın alınabilir",
       "dlg:decor_selection:title:empty": "Stil uygulaması yok",
       "dlg:decor_selection:title:item": "Stil uygulaması %0",
       "dlg:decor_selection:title:set": "Set %0",
@@ -54695,8 +54732,8 @@
       "dlg:decor_selection:desc:empty": "Profil sheklin ve istifadechi adin ber-bezeksiz olsun",
       "dlg:decor_selection:desc:league_item": "Bu ber-bezekden istifade etmek uchun teleb olunan ligada yer al",
       "dlg:decor_selection:desc:league_set": "Bu ber-destden istifade etmek uchun teleb olunan ligada yer al",
-      "dlg:decor_selection:desc:pass": "Movsumi mukafat kimi alina biler",
-      "dlg:decor_selection:desc:pass_buy": "Movsum teyin edildi. Satin alina biler",
+      "dlg:decor_selection:desc:pass": "❤️ bilan sotib olish mumkin",
+      "dlg:decor_selection:desc:pass_buy": "❤️ bilan sotib olish mumkin",
       "dlg:decor_selection:title:empty": "Ber-bezeksiz",
       "dlg:decor_selection:title:item": "Terz %0",
       "dlg:decor_selection:title:set": "Dest %0",
@@ -58746,8 +58783,8 @@
       "dlg:decor_selection:desc:empty": "Leave the profile pic and user name without styling",
       "dlg:decor_selection:desc:league_item": "Reach the required league to use this styling",
       "dlg:decor_selection:desc:league_set": "Reach the required league to use this set",
-      "dlg:decor_selection:desc:pass": "Can be received as a seasonal award",
-      "dlg:decor_selection:desc:pass_buy": "Season set. Available for purchase",
+      "dlg:decor_selection:desc:pass": "Can be purchased with ❤️",
+      "dlg:decor_selection:desc:pass_buy": "Can be purchased with ❤️",
       "dlg:decor_selection:title:empty": "No styling",
       "dlg:decor_selection:title:item": "Styling %0",
       "dlg:decor_selection:title:set": "Set %0",
@@ -62797,8 +62834,8 @@
       "dlg:decor_selection:desc:empty": "Leave the profile pic and user name without styling",
       "dlg:decor_selection:desc:league_item": "Reach the required league to use this styling",
       "dlg:decor_selection:desc:league_set": "Reach the required league to use this set",
-      "dlg:decor_selection:desc:pass": "Can be received as a seasonal award",
-      "dlg:decor_selection:desc:pass_buy": "Season set. Available for purchase",
+      "dlg:decor_selection:desc:pass": "Can be purchased with ❤️",
+      "dlg:decor_selection:desc:pass_buy": "Can be purchased with ❤️",
       "dlg:decor_selection:title:empty": "No styling",
       "dlg:decor_selection:title:item": "Styling %0",
       "dlg:decor_selection:title:set": "Set %0",

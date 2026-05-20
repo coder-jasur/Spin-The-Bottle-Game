@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.bot.i18n import _
 from src.app.bot.telegram_safe import is_bot_blocked_by_user, log_bot_blocked
+from src.app.api.ws.constants import hearts_for_stars_price, validate_hearts_product
 from src.app.services.telegram_payments import (
     apply_successful_stars_payment,
     notify_player_topup,
@@ -58,10 +59,22 @@ async def on_successful_payment(message: Message, session: AsyncSession) -> None
     if hearts_product and hearts_product > 0:
         from src.app.database.repositories.game import GameRepository
 
+        hearts_grant = int(hearts_product)
+        if not validate_hearts_product(paid, hearts_grant):
+            expected = hearts_for_stars_price(paid)
+            if expected is None:
+                log.warning(
+                    "TG pay: noma'lum yurak paketi user=%s stars=%s hearts=%s",
+                    user_id,
+                    paid,
+                    hearts_grant,
+                )
+                return
+            hearts_grant = expected
         repo = GameRepository(session)
         ok, sc, gt, hearts = await repo.apply_tg_hearts_product_payment(
             user_id,
-            hearts_product,
+            hearts_grant,
             paid,
             charge_id,
         )
@@ -81,15 +94,24 @@ async def on_successful_payment(message: Message, session: AsyncSession) -> None
     await notify_player_topup(user_id, paid, sc, gt, hearts)
 
     try:
-        await message.answer(
-            _(
+        if hearts_product and hearts_product > 0:
+            msg = _(
+                "✅ Payment received: %(paid)s ★ → +%(hearts)s ❤️ hearts\n"
+                "Stars balance: %(sc)s ★\n"
+                "Return to the game to continue.",
+                paid=paid,
+                hearts=hearts,
+                sc=sc,
+            )
+        else:
+            msg = _(
                 "✅ Payment received: +%(paid)s ★\n"
                 "Current balance: %(sc)s ★ Stars\n"
                 "You can return to the game and continue shopping.",
                 paid=paid,
                 sc=sc,
             )
-        )
+        await message.answer(msg)
     except TelegramForbiddenError:
         log_bot_blocked(message.chat.id if message.chat else None, context="payment_ok")
     except Exception as e:

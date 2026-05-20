@@ -1,4 +1,4 @@
-"""
+﻿"""
 GameManager — to'liq tuzatilgan va kengaytirilgan versiya.
 Xonalar ro'yxati, real foydalanuvchi ma'lumotlari, to'liq statistika.
 """
@@ -173,6 +173,25 @@ class GameManager:
         self._queue_players: Dict[str, Player] = {}
         # user_id → so'nggi sovg'a vaqtlari (monotonic)
         self._gift_burst: Dict[str, Deque[float]] = defaultdict(deque)
+        # db_id → yutuq tekshiruvi (parallel create_task dan qayta unlock oldini olish)
+        self._achievement_locks: Dict[int, asyncio.Lock] = {}
+
+    def _achievement_lock(self, player: Player) -> asyncio.Lock:
+        db_id = int(getattr(player, "db_id", 0) or 0)
+        if db_id not in self._achievement_locks:
+            self._achievement_locks[db_id] = asyncio.Lock()
+        return self._achievement_locks[db_id]
+
+    def _sync_achievement_notified(self, player: Player) -> None:
+        """DB dagi ochiq darajalar uchun modal qayta chiqmasin."""
+        notified = getattr(player, "_achievement_notified", None)
+        if notified is None:
+            player._achievement_notified = {}
+            notified = player._achievement_notified
+        for k, v in (player.achievements or {}).items():
+            lvl = int(v or 0)
+            if lvl > int(notified.get(k, 0) or 0):
+                notified[k] = lvl
 
     def _find_duplicate_plain_player(self, table: Table, player: Player) -> Optional[Player]:
         """Bir xil akkaunt (db_id) shu stolda allaqachon onlayn bo'lsa — eski sessiya."""
@@ -306,42 +325,42 @@ class GameManager:
 
     async def _adjust_harem_influence_score(
         self,
-        target_db_id: int,
+        admirer_db_id: int,
         delta: int,
         live: Optional[Player] = None,
     ) -> int:
-        """«2 yurak» reytingi: uxajor to'lovlari yig'indisi (+ qo'shiladi, - ayiriladi)."""
-        if not target_db_id or not delta:
+        """«2 yurak» reytingi: uxajor (to'lovchi) yig'indisi (+ court, - nishon olib ketilganda)."""
+        if not admirer_db_id or not delta:
             cur = int(getattr(live, "harem_courts_received", 0) or 0) if live else 0
             return max(0, cur)
         cur = 0
-        if live and int(live.db_id or 0) == int(target_db_id):
+        if live and int(live.db_id or 0) == int(admirer_db_id):
             cur = int(getattr(live, "harem_courts_received", 0) or 0)
         else:
             try:
                 async with self._db() as repo:
-                    db_u = await repo.get_user_with_wallet(int(target_db_id))
+                    db_u = await repo.get_user_with_wallet(int(admirer_db_id))
                 if db_u:
                     cur = int(getattr(db_u, "harem_courts_received", 0) or 0)
             except Exception as e:
                 log.debug("_adjust_harem_influence_score load: %s", e)
         new_val = max(0, cur + int(delta))
-        if live and int(live.db_id or 0) == int(target_db_id):
+        if live and int(live.db_id or 0) == int(admirer_db_id):
             live.harem_courts_received = new_val
-        if target_db_id:
+        if admirer_db_id:
             await self._db_update_user(
-                int(target_db_id), harem_courts_received=new_val
+                int(admirer_db_id), harem_courts_received=new_val
             )
         return new_val
 
     async def _apply_harem_court_to_target(
-        self, target: Player, buyer_db: int, paid: int
+        self,
+        target: Player,
+        buyer_db: int,
+        paid: int,
+        buyer_live: Optional[Player] = None,
     ) -> None:
-        """Nishonga yangi uxajorlik: faqat shu to'lov 2-yurakka qo'shiladi.
-
-        Eski uxajorni bu yerda ayirmaymiz — faqat u boshqa nishonga o'tganda
-        `_release_prior_harem_targets` orqali ayiriladi.
-        """
+        """Nishonga yangi uxajor: `harem_owner_id` yangilanadi; 2-yurak — to'lovchiga."""
         paid = max(1, int(paid or 1))
         target_db = int(target.db_id or 0)
         if not target_db:
@@ -350,7 +369,6 @@ class GameManager:
         target.harem_owner_id = int(buyer_db)
         target.harem_owner_paid_price = paid
         target.harem_price = max(1, int(target.harem_price or 1)) + 1
-        await self._adjust_harem_influence_score(target_db, paid, target)
 
         await self._db_update_user(
             target_db,
@@ -359,29 +377,30 @@ class GameManager:
             harem_price=target.harem_price,
         )
 
-    async def _revoke_harem_court_from_target(
+        bl = buyer_live or self._find_player_by_db_id(int(buyer_db))
+        await self._adjust_harem_influence_score(int(buyer_db), paid, bl)
+
+    async def _revoke_harem_court_from_admirer(
         self,
-        target_db_id: int,
+        admirer_db_id: int,
         paid: int,
         live: Optional[Player] = None,
     ) -> None:
-        """Boshqa odamga uxajovat qilganda: 2-yurak yig'indisidan to'langan summa ayiriladi.
+        """Nishon boshqa uxajorga o'tganda: eski to'lovchining 2-yurak yig'indisidan ayiriladi.
 
-        Profil «otkaz» yoki admirer o'zi ketganda chaqirilmaydi — faqat yangi nishon.
+        Profil «otkaz» yoki o'z ixtiyori bilan ketganda chaqirilmaydi.
         """
-        if not target_db_id:
+        if not admirer_db_id:
             return
         paid_eff = max(0, int(paid or 0))
-        if paid_eff <= 0 and live:
-            paid_eff = int(getattr(live, "harem_owner_paid_price", 0) or 0)
         if paid_eff <= 0:
             log.warning(
-                "harem revoke skip: paid noma'lum (target_db=%s) — noto'g'ri ayirishdan qochildi",
-                target_db_id,
+                "harem revoke skip: paid noma'lum (admirer_db=%s)",
+                admirer_db_id,
             )
             return
         await self._adjust_harem_influence_score(
-            int(target_db_id), -paid_eff, live
+            int(admirer_db_id), -paid_eff, live
         )
 
     def register_kick_reentry_ban(self, table_id: str, target: Player) -> None:
@@ -790,6 +809,7 @@ class GameManager:
                         await repo.get_user_achievement_bonus_claimed(rid)
                     )
                     player._achievements_hydrated = True
+                    self._sync_achievement_notified(player)
             except Exception as e:
                 log.debug(f"connect lifetime stats: {e}")
             try:
@@ -1467,6 +1487,7 @@ class GameManager:
                         )
                     )
                     player._achievements_hydrated = True
+                    self._sync_achievement_notified(player)
             except Exception as e:
                 log.debug("game_enter achievements: %s", e)
         ach_list = [
@@ -1897,6 +1918,8 @@ class GameManager:
                 await self._db_update_user(int(player.db_id), age=fixed_age)
             player.gender = u.gender or "male"
             player.male = player.gender != "female"
+            player.frame = str(getattr(u, "frame", None) or "")
+            player.stone = str(getattr(u, "stone", None) or "")
         except Exception as e:
             log.debug("sync_player_profile_from_db: %s", e)
 
@@ -3964,7 +3987,7 @@ class GameManager:
     async def _release_prior_harem_targets(
         self, pursuer_db_id: int, new_target_db_id: int
     ) -> None:
-        """Bir uxajor faqat bitta nishonda: yangi court dan oldin eskilarini bo'shatadi."""
+        """Eski mantiq (bitta nishon). Hozir chaqirilmaydi — ko'p nishon ruxsat."""
         if not pursuer_db_id:
             return
         keep_id = int(new_target_db_id or 0)
@@ -3984,7 +4007,9 @@ class GameManager:
             revoke_paid = int(paid or 0)
             if live and revoke_paid <= 0:
                 revoke_paid = int(getattr(live, "harem_owner_paid_price", 0) or 0)
-            await self._revoke_harem_court_from_target(int(tid), revoke_paid, live)
+            await self._revoke_harem_court_from_admirer(
+                pursuer_db_id, revoke_paid, self._find_player_by_db_id(pursuer_db_id)
+            )
             if live:
                 live.harem_owner_id = 0
                 live.harem_owner_paid_price = 0
@@ -3998,10 +4023,10 @@ class GameManager:
                 if int(pl.harem_owner_id or 0) != pursuer_db_id:
                     continue
                 if db_id and db_id not in handled_ids:
-                    await self._revoke_harem_court_from_target(
-                        db_id,
+                    await self._revoke_harem_court_from_admirer(
+                        pursuer_db_id,
                         int(getattr(pl, "harem_owner_paid_price", 0) or 0),
-                        pl,
+                        self._find_player_by_db_id(pursuer_db_id),
                     )
                     await self._db_update_user(
                         db_id, harem_owner_id=0, harem_owner_paid_price=0
@@ -4061,9 +4086,7 @@ class GameManager:
         live.harem_owner_paid_price = int(
             getattr(target, "harem_owner_paid_price", 0) or 0
         )
-        live.harem_courts_received = int(
-            getattr(target, "harem_courts_received", 0) or 0
-        )
+        await self._refresh_player_harem_from_db(live)
         if not live.table_id:
             return
         part = live.to_participant()
@@ -4128,6 +4151,7 @@ class GameManager:
             return
 
         old_oid = int(target.harem_owner_id or 0)
+        old_owner_paid = int(getattr(target, "harem_owner_paid_price", 0) or 0)
         old_owner_short = None
         if old_oid and old_oid != buyer_db:
             old_p = self._find_player_by_db_id(old_oid)
@@ -4149,10 +4173,16 @@ class GameManager:
             await self._harem_purchase_fail(player, "not_enough_gold")
             return
 
-        await self._release_prior_harem_targets(
-            buyer_db, int(target.db_id or 0)
+        if old_oid and old_oid != buyer_db and old_owner_paid > 0:
+            old_live = self._find_player_by_db_id(old_oid)
+            await self._revoke_harem_court_from_admirer(
+                old_oid, old_owner_paid, old_live
+            )
+
+        await self._apply_harem_court_to_target(
+            target, buyer_db, price, buyer_live=player
         )
-        await self._apply_harem_court_to_target(target, buyer_db, price)
+        await self._refresh_player_harem_from_db(player)
 
         hp = {
             "type": "harem_purchase",
@@ -4171,10 +4201,21 @@ class GameManager:
 
         await self._sync_harem_state_to_live_tables(target, buyer_db)
 
+        if str(player.table_id or "") == str(table.table_id):
+            buyer_part = player.to_participant()
+            await self._attach_harem_owner_payload(
+                buyer_part, int(player.harem_owner_id or 0)
+            )
+            await self.broadcast(
+                table.table_id,
+                self._make_update_user_payload(buyer_part),
+            )
+
         if str(target.table_id or "") == str(table.table_id):
             target_participant = target.to_participant()
             await self._attach_harem_owner_payload(target_participant, buyer_db)
             target_participant["harem_price"] = target.harem_price
+            await self._refresh_player_harem_from_db(target)
             target_participant["harem_courts_received"] = int(
                 getattr(target, "harem_courts_received", 0) or 0
             )
@@ -4392,11 +4433,39 @@ class GameManager:
         live_target: Optional[Player],
         target_db_id: Optional[int],
     ) -> None:
-        """Target foydalanuvchining uxajorini (harem_owner_id) bo'shatadi.
+        """Target uxajorini bo'shatadi; 2-yurak — to'lovchi (admirer) yig'indisidan court narxi ayiriladi."""
+        admirer_db = 0
+        paid = 0
+        if live_target:
+            admirer_db = int(live_target.harem_owner_id or 0)
+            paid = int(getattr(live_target, "harem_owner_paid_price", 0) or 0)
+        tid = int(target_db_id or 0) or int(getattr(live_target, "db_id", 0) or 0)
+        if tid and (not admirer_db or paid <= 0):
+            try:
+                async with self._db() as repo:
+                    db_u = await repo.get_user_with_wallet(tid)
+                if db_u:
+                    if not admirer_db:
+                        admirer_db = int(getattr(db_u, "harem_owner_id", 0) or 0)
+                    if paid <= 0:
+                        paid = int(getattr(db_u, "harem_owner_paid_price", 0) or 0)
+            except Exception as e:
+                log.debug("_clear_target_harem_owner load: %s", e)
 
-        `harem_courts_received` (2 yurak) o'zgarmaydi — faqat boshqa nishonga
-        uxajovat qilganda `_revoke_harem_court_from_target` orqali kamayadi.
-        """
+        if admirer_db and paid > 0:
+            admirer_live = self._find_player_by_db_id(admirer_db)
+            await self._revoke_harem_court_from_admirer(
+                admirer_db, paid, admirer_live
+            )
+            if admirer_live:
+                await self._refresh_player_harem_from_db(admirer_live)
+                if admirer_live.table_id:
+                    adm_part = admirer_live.to_participant()
+                    await self.broadcast(
+                        admirer_live.table_id,
+                        self._make_update_user_payload(adm_part),
+                    )
+
         if live_target:
             live_target.harem_owner_id = 0
             live_target.harem_owner_paid_price = 0
@@ -4635,17 +4704,37 @@ class GameManager:
                 if not ok:
                     return
 
-                await self._release_prior_harem_targets(
-                    viewer_db, int(target_db_id or 0)
-                )
+                displaced_paid = 0
+                if displaced_owner:
+                    displaced_paid = int(
+                        getattr(live_target or target_for_extra, "harem_owner_paid_price", 0)
+                        or 0
+                    )
+                    if displaced_paid <= 0 and target_db_id:
+                        try:
+                            async with self._db() as repo:
+                                db_t = await repo.get_user_with_wallet(int(target_db_id))
+                            if db_t:
+                                displaced_paid = int(
+                                    getattr(db_t, "harem_owner_paid_price", 0) or 0
+                                )
+                        except Exception as e:
+                            log.debug("like_user displaced_paid load: %s", e)
+                    if displaced_paid > 0:
+                        await self._revoke_harem_court_from_admirer(
+                            displaced_owner,
+                            displaced_paid,
+                            self._find_player_by_db_id(displaced_owner),
+                        )
 
                 court_pl = live_target or target_for_extra
                 if court_pl:
                     if target_db_id and not court_pl.db_id:
                         court_pl.db_id = int(target_db_id)
                     await self._apply_harem_court_to_target(
-                        court_pl, viewer_db, price
+                        court_pl, viewer_db, price, buyer_live=player
                     )
+                    await self._refresh_player_harem_from_db(player)
                     cur_owner = viewer_db
                     cur_price = int(court_pl.harem_price or 1)
                 else:
@@ -4656,7 +4745,7 @@ class GameManager:
                     player.id,
                     raw_target,
                     price,
-                    new_price,
+                    cur_price,
                 )
 
                 if displaced_owner:
@@ -4678,6 +4767,16 @@ class GameManager:
                     await self.broadcast(
                         live_target.table_id,
                         self._make_update_user_payload(part),
+                    )
+
+                if player.table_id:
+                    buyer_part = player.to_participant()
+                    await self._attach_harem_owner_payload(
+                        buyer_part, int(player.harem_owner_id or 0)
+                    )
+                    await self.broadcast(
+                        player.table_id,
+                        self._make_update_user_payload(buyer_part),
                     )
 
                 # Yangi viewer wallet holati
@@ -4890,6 +4989,7 @@ class GameManager:
                     await repo.get_user_achievement_bonus_claimed(int(player.db_id))
                 )
             player._achievements_hydrated = True
+            self._sync_achievement_notified(player)
         except Exception as e:
             log.debug("refresh achievements: %s", e)
 
@@ -4899,32 +4999,27 @@ class GameManager:
         """Berilgan metrika bo'yicha mos yutuqlarni tekshiradi va kerakli
         bo'lsa `achievement_bonus` paketini yuboradi.
         """
-        if total <= 0:
+        if total <= 0 or not player.db_id:
             return
-        await self._refresh_player_achievements_from_db(player)
-        for key, cfg in self.ACHIEVEMENTS.items():
-            if cfg["metric"] != metric:
-                continue
-            counters = cfg["counters"]
-            cur_level = int(player.achievements.get(key, 0))
-            # Eng yuqori erishilgan darajani topamiz
-            new_level = cur_level
-            for i, threshold in enumerate(counters):
-                if total >= threshold:
-                    new_level = max(new_level, i + 1)
-            if new_level <= cur_level:
-                continue
-            player.achievements[key] = new_level
-            bonus_amount = int(cfg.get("bonus", 20))
-            log.info(
-                "ACHIEVEMENT unlocked: %s lvl=%d for %s (%s=%d)",
-                key,
-                new_level,
-                player.username,
-                metric,
-                total,
-            )
-            if player.db_id:
+        async with self._achievement_lock(player):
+            await self._refresh_player_achievements_from_db(player, force=True)
+            notified = getattr(player, "_achievement_notified", None) or {}
+            for key, cfg in self.ACHIEVEMENTS.items():
+                if cfg["metric"] != metric:
+                    continue
+                counters = cfg["counters"]
+                cur_level = int(player.achievements.get(key, 0) or 0)
+                new_level = cur_level
+                for i, threshold in enumerate(counters):
+                    if total >= threshold:
+                        new_level = max(new_level, i + 1)
+                if new_level <= cur_level:
+                    continue
+                already = int(notified.get(key, 0) or 0)
+                if new_level <= already:
+                    player.achievements[key] = new_level
+                    continue
+                bonus_amount = int(cfg.get("bonus", 20))
                 try:
                     async with self._db() as repo:
                         await repo.upsert_user_achievement(
@@ -4938,24 +5033,34 @@ class GameManager:
                         e,
                         exc_info=True,
                     )
-
-            # Klientga `achievement_bonus` (modal) va `game_achievement`
-            # (chatga xabar) yuboramiz.
-            payload = {
-                "type": "achievement_bonus",
-                "ts": self._ts(),
-                "timestamp": self._ts(),
-                "user": player.to_short(),
-                "achievement_id": key,
-                "level": new_level - 1,  # klient 0-based level kutadi
-                "bonus": bonus_amount,
-            }
-            await self.send_to(player, payload)
-            if player.table_id:
-                await self.broadcast(
-                    player.table_id,
-                    {**payload, "type": "game_achievement"},
+                    continue
+                player.achievements[key] = new_level
+                if getattr(player, "_achievement_notified", None) is None:
+                    player._achievement_notified = {}
+                player._achievement_notified[key] = new_level
+                log.info(
+                    "ACHIEVEMENT unlocked: %s lvl=%d for %s (%s=%d)",
+                    key,
+                    new_level,
+                    player.username,
+                    metric,
+                    total,
                 )
+                payload = {
+                    "type": "achievement_bonus",
+                    "ts": self._ts(),
+                    "timestamp": self._ts(),
+                    "user": player.to_short(),
+                    "achievement_id": key,
+                    "level": new_level - 1,
+                    "bonus": bonus_amount,
+                }
+                await self.send_to(player, payload)
+                if player.table_id:
+                    await self.broadcast(
+                        player.table_id,
+                        {**payload, "type": "game_achievement"},
+                    )
 
     async def _handle_claim_achievement_bonus(self, player: Player, data: dict) -> None:
         """Klient yutuq mukofotini olishni so'raydi.
@@ -4967,47 +5072,52 @@ class GameManager:
         key = str(data.get("achievement_id", "")).strip()
         shared = bool(data.get("shared", False))
         cfg = self.ACHIEVEMENTS.get(key)
-        if not cfg:
+        if not cfg or not player.db_id:
             log.debug(f"claim_achievement_bonus: noma'lum id={key!r}")
             return
-        await self._refresh_player_achievements_from_db(player, force=True)
-        unlocked = int((player.achievements or {}).get(key, 0) or 0)
-        if unlocked < 1:
-            log.debug(
-                "claim_achievement_bonus: hali ochilmagan id=%s user=%s",
-                key,
-                player.username,
+        async with self._achievement_lock(player):
+            await self._refresh_player_achievements_from_db(player, force=True)
+            unlocked = int((player.achievements or {}).get(key, 0) or 0)
+            if unlocked < 1:
+                log.debug(
+                    "claim_achievement_bonus: hali ochilmagan id=%s user=%s",
+                    key,
+                    player.username,
+                )
+                return
+            claimed = int((player.achievements_bonus_claimed or {}).get(key, 0) or 0)
+            if claimed >= unlocked:
+                log.debug(
+                    "claim_achievement_bonus: mukofot allaqachon olingan id=%s user=%s lvl=%s",
+                    key,
+                    player.username,
+                    unlocked,
+                )
+                return
+            next_claim = claimed + 1
+            bonus = int(cfg.get("bonus", 20))
+            if shared:
+                bonus *= 2
+            await self._give_hearts(
+                player, bonus, f"achievement:{key}:L{next_claim}", save_to_db=True
             )
-            return
-        claimed = int((player.achievements_bonus_claimed or {}).get(key, 0) or 0)
-        if claimed >= unlocked:
-            log.debug(
-                "claim_achievement_bonus: mukofot allaqachon olingan id=%s user=%s lvl=%s",
-                key,
-                player.username,
-                unlocked,
-            )
-            return
-        bonus = int(cfg.get("bonus", 20))
-        if shared:
-            bonus *= 2  # ulashganda mukofot 2x
-        await self._give_hearts(player, bonus, f"achievement:{key}", save_to_db=True)
-        player.achievements_bonus_claimed[key] = unlocked
-        if player.db_id:
+            player.achievements_bonus_claimed[key] = next_claim
             try:
                 async with self._db() as repo:
                     await repo.set_user_achievement_bonus_claimed(
-                        int(player.db_id), key, unlocked
+                        int(player.db_id), key, next_claim
                     )
             except Exception as e:
                 log.error("achievement bonus claimed persist: %s", e)
-        log.info(
-            "ACHIEVEMENT claim: %s id=%s bonus=%d shared=%s",
-            player.username,
-            key,
-            bonus,
-            shared,
-        )
+            log.info(
+                "ACHIEVEMENT claim: %s id=%s bonus=%d shared=%s level=%s/%s",
+                player.username,
+                key,
+                bonus,
+                shared,
+                next_claim,
+                unlocked,
+            )
 
     async def _handle_compliment_next(self, player: Player):
         need = COMPLIMENTS_TO_REWARD
@@ -5294,8 +5404,16 @@ class GameManager:
         )
 
     async def _handle_set_decorations(self, table: Table, player: Player, data: dict):
-        player.frame = str(data.get("frame", ""))
-        player.stone = str(data.get("stone", ""))
+        frame = str(data.get("frame") or "").strip()
+        stone = str(data.get("stone") or "").strip()
+        player.frame = frame
+        player.stone = stone
+        if player.db_id:
+            await self._db_update_user(
+                int(player.db_id),
+                frame=frame,
+                stone=stone,
+            )
         part = player.to_participant()
         await self._attach_harem_owner_payload(part, int(player.harem_owner_id or 0))
         await self.broadcast(
@@ -7303,6 +7421,21 @@ class GameManager:
             return
 
         hearts, stars = parsed
+        from src.app.api.ws.constants import hearts_for_stars_price, validate_hearts_product
+
+        if not validate_hearts_product(stars, hearts):
+            expected = hearts_for_stars_price(stars)
+            if expected is None:
+                await self.send_to(
+                    player,
+                    {
+                        "type": "tg_purchase",
+                        "error": "Unknown product",
+                        "ts": self._ts(),
+                    },
+                )
+                return
+            hearts = expected
         lang = getattr(player, "language_code", None)
         title = str(data.get("title") or "")[:32] or None
         link = await create_stars_invoice_link(

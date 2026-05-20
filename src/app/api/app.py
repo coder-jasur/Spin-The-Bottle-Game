@@ -106,6 +106,23 @@ async def startup_application(
         print(f"[WARN] Musiqa Redis: {e}", flush=True)
 
     try:
+        from src.app.core.geo import _get_reader, geoip_status
+
+        st = geoip_status()
+        if st.get("valid"):
+            _get_reader()
+            print(f"[OK] GeoIP: {st['path']} ({st['size'] // 1024} KB)", flush=True)
+        else:
+            print(
+                f"[WARN] GeoIP DB yo'q yoki bo'sh: {st['path']} — "
+                "mamlakat ip-api.com orqali aniqlanadi; "
+                "tavsiya: MaxMind GeoLite2-Country.mmdb ni VPS ga yuklang",
+                flush=True,
+            )
+    except Exception as e:
+        print(f"[WARN] GeoIP: {e}", flush=True)
+
+    try:
         from src.app.api.music.router import warm_music_catalog_cache
 
         n_tracks = await warm_music_catalog_cache()

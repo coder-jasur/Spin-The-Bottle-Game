@@ -57,19 +57,12 @@ async def register(
             content={"error": "Bu kullanıcı adı zaten alınmış"}
         )
 
-    # IP va Country
-    client_ip = (
-        request.headers.get(
-            "X-Forwarded-For", request.client.host if request.client else "127.0.0.1"
-        )
-        .split(",")[0]
-        .strip()
-    )
-    from src.app.core.geo import get_country_by_ip
+    from src.app.core.geo import client_ip, country_code_from_ip
 
-    user_country = get_country_by_ip(client_ip)
-    if user_country == "Unknown":
-        user_country = "Uzbekistan"
+    ip = client_ip(request)
+    user_country = country_code_from_ip(ip)
+    if not user_country:
+        log.warning("REGISTER: mamlakat aniqlanmadi ip=%s", ip)
 
     # Gender (Barcha tillar uchun: EN, RU, AZ, TR, UZ, KZ, TJ)
     gender_map = {

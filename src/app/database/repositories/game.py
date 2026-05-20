@@ -5,8 +5,11 @@ UserRepository, WalletRepository, RankingRepository ni birlashtiradi.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Optional
+
+_STARS_PAID_RE = re.compile(r"stars=(\d+)")
 
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -79,22 +82,27 @@ class GameRepository:
     ) -> list[tuple[int, int]]:
         """owner_db_id uxajori bo'lgan foydalanuvchilarni bo'shatadi.
 
-        (target_user_id, harem_owner_paid_price) ro'yxati qaytariladi.
+        (target_user_id, harem_owner_paid_price) — UPDATE dan oldin o'qiladi.
         """
         if not owner_db_id:
             return []
         conds = [User.harem_owner_id == owner_db_id]
         if except_user_id:
             conds.append(User.id != except_user_id)
+        sel = select(User.id, User.harem_owner_paid_price).where(*conds)
+        rows = (await self.session.execute(sel)).all()
+        cleared = [(int(r[0]), int(r[1] or 0)) for r in rows]
+        if not cleared:
+            return []
+        ids = [t[0] for t in cleared]
         stmt = (
             update(User)
-            .where(*conds)
+            .where(User.id.in_(ids))
             .values(harem_owner_id=0, harem_owner_paid_price=0)
-            .returning(User.id, User.harem_owner_paid_price)
         )
-        result = await self.session.execute(stmt)
+        await self.session.execute(stmt)
         await self.session.commit()
-        return [(int(row[0]), int(row[1] or 0)) for row in result.all()]
+        return cleared
 
     async def mark_bonus_claimed(self, user_id: int) -> None:
         """Foydalanuvchi bugun bonus olganini belgilaydi."""
@@ -201,8 +209,20 @@ class GameRepository:
         await self.session.commit()
         return True, new_balance
 
+    @staticmethod
+    def _xtr_amount_from_transaction(tx: Transaction) -> int:
+        """Telegram Stars (XTR) miqdori — balans to'ldirish yoki yurak paketi."""
+        if tx.type == "tg_stars_topup":
+            return int(tx.amount or 0)
+        if tx.type == "tg_hearts_product":
+            desc = tx.description or ""
+            m = _STARS_PAID_RE.search(desc)
+            if m:
+                return int(m.group(1))
+        return 0
+
     async def get_tg_stars_revenue_stats(self) -> dict:
-        """Telegram Stars to'lovlari (transactions.type = tg_stars_topup)."""
+        """Telegram Stars (XTR) daromadi: balans to'ldirish + yurak paketlari."""
         now = datetime.utcnow()
         windows = {
             "day": now - timedelta(days=1),
@@ -211,15 +231,17 @@ class GameRepository:
             "year": now - timedelta(days=365),
         }
 
+        pay_types = ("tg_stars_topup", "tg_hearts_product")
+
         async def _agg(since: datetime | None) -> tuple[int, int]:
-            stmt = select(
-                func.coalesce(func.sum(Transaction.amount), 0),
-                func.count(Transaction.id),
-            ).where(Transaction.type == "tg_stars_topup")
+            stmt = select(Transaction).where(Transaction.type.in_(pay_types))
             if since is not None:
                 stmt = stmt.where(Transaction.created_at >= since)
-            row = (await self.session.execute(stmt)).one()
-            return int(row[0] or 0), int(row[1] or 0)
+            rows = (await self.session.execute(stmt)).scalars().all()
+            total = 0
+            for tx in rows:
+                total += self._xtr_amount_from_transaction(tx)
+            return total, len(rows)
 
         out: dict = {}
         for key, since in windows.items():
@@ -233,7 +255,7 @@ class GameRepository:
         stmt = (
             select(Transaction, User)
             .join(User, User.id == Transaction.user_id)
-            .where(Transaction.type == "tg_stars_topup")
+            .where(Transaction.type.in_(("tg_stars_topup", "tg_hearts_product")))
             .order_by(Transaction.id.desc())
             .limit(max(1, min(int(limit), 200)))
         )
@@ -243,13 +265,19 @@ class GameRepository:
             charge = ""
             desc = tx.description or ""
             if desc.startswith("tg_charge:"):
-                charge = desc.split(":", 1)[1][:24]
+                charge = desc[10:].split(";", 1)[0][:24]
+            xtr = self._xtr_amount_from_transaction(tx)
+            if xtr <= 0:
+                continue
+            product = "hearts" if tx.type == "tg_hearts_product" else "topup"
             items.append(
                 {
                     "id": tx.id,
                     "user_id": tx.user_id,
                     "username": user.username or user.login or f"ID {tx.user_id}",
-                    "amount": int(tx.amount or 0),
+                    "amount": xtr,
+                    "product": product,
+                    "hearts": int(tx.amount or 0) if product == "hearts" else 0,
                     "created_at": (
                         tx.created_at.isoformat(sep=" ", timespec="seconds")
                         if tx.created_at
@@ -861,8 +889,19 @@ class GameRepository:
         )
         ua = (await self.session.execute(stmt)).scalar_one_or_none()
         if not ua:
-            return
-        ua.bonus_claimed_level = max(int(ua.bonus_claimed_level or 0), int(level))
+            if level <= 0:
+                return
+            self.session.add(
+                UserAchievement(
+                    user_id=user_id,
+                    achievement_id=ach.id,
+                    level=0,
+                    status="locked",
+                    bonus_claimed_level=int(level),
+                )
+            )
+        else:
+            ua.bonus_claimed_level = max(int(ua.bonus_claimed_level or 0), int(level))
         await self.session.commit()
 
     async def upsert_user_achievement(

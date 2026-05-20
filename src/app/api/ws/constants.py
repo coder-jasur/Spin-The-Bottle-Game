@@ -292,6 +292,21 @@ HEARTS_PACKAGES = {
     2500: 12500,
 }
 
+
+def hearts_for_stars_price(stars_price: int) -> int | None:
+    """Telegram Stars narxi (XTR) → olinadigan yuraklar (gold+bonus jami)."""
+    return HEARTS_PACKAGES.get(int(stars_price))
+
+
+def is_hearts_package_stars(stars_price: int) -> bool:
+    return int(stars_price) in HEARTS_PACKAGES
+
+
+def validate_hearts_product(stars_price: int, hearts: int) -> bool:
+    expected = hearts_for_stars_price(stars_price)
+    return expected is not None and int(hearts) == int(expected)
+
+
 # Bank dovşan (rabbit_gift_send / rabbit_gift_caught)
 RABBIT_MIN_PLAYERS = 5
 RABBIT_SEND_COST_TOKENS = 20

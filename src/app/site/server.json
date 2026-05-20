@@ -1,6 +1,6 @@
 {
     "assets": {
-        "url": "./assets.json?v=10",
+        "url": "./assets.json?v=12",
         "images_url": "https://spinthebottletg.com/",
         "images_url_v2": "https://spinthebottletg.com/${width}/${name}.png",
         "images_url_v3": {

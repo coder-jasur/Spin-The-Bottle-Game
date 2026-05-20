@@ -475,6 +475,7 @@
         <button class="tab-btn" data-tab="stats" onclick="showTab('stats')" data-i18n="admin.tab_stats">📈 Statistika</button>
         <button class="tab-btn" data-tab="reports" onclick="showTab('reports')" data-i18n="admin.tab_reports">👥 Foydalanuvchilar</button>
         <button class="tab-btn" data-tab="referral" onclick="showTab('referral')" data-i18n="admin.tab_referral">🤝 Referal</button>
+        <button class="tab-btn" data-tab="ratings" onclick="showTab('ratings')" data-i18n="admin.tab_ratings">🏆 Reyting</button>
         <button class="tab-btn" id="admins-tab-btn" data-tab="admins" onclick="showTab('admins')" style="display: none;" data-i18n="admin.tab_admins">🛡️ Adminlar</button>
     </div>
 
@@ -731,6 +732,28 @@
             </div>
         </div>
 
+        <!-- TAB: RATINGS -->
+        <div id="ratings" class="tab-content">
+            <div class="card">
+                <h2 data-i18n="admin.ratings_title">🏆 Reytingni boshqarish</h2>
+                <div id="ratings-alert" class="alert"></div>
+                <p class="hint" data-i18n="admin.ratings_hint">
+                    Foydalanuvchi ID ni kiriting, «Yuklash» bilan joriy qiymatlarni ko'ring, tahrirlab «Saqlash» bosing.
+                    TOP va profil reytinglari shu ustunlardan o'qiladi.
+                </p>
+                <div class="form-group">
+                    <label data-i18n="admin.label_user_id">Foydalanuvchi ID</label>
+                    <input type="number" id="ratings-user-id" min="1" step="1" data-i18n-placeholder="admin.placeholder_user_id" placeholder="Masalan: 42">
+                </div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">
+                    <button class="btn btn-primary" type="button" onclick="loadUserRatings()" data-i18n="admin.ratings_btn_load">Yuklash</button>
+                    <button class="btn btn-accent" type="button" onclick="saveUserRatings()" data-i18n="admin.ratings_btn_save">Saqlash</button>
+                </div>
+                <p id="ratings-user-label" class="hint" style="display:none;"></p>
+                <div id="ratings-fields" class="stats-grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));"></div>
+            </div>
+        </div>
+
         <!-- TAB: ADMINS (Superadmin only) -->
         <div id="admins" class="tab-content">
             <div class="card">
@@ -760,7 +783,7 @@
     </div>
 
     <script src="/static/site_i18n.js?v=4"></script>
-    <script src="/static/admin_i18n.js?v=4"></script>
+    <script src="/static/admin_i18n.js?v=5"></script>
     <script>
         let i18n = null;
         function t(key, vars) {
@@ -801,6 +824,104 @@
             if (tabId === 'reports') loadComplaints();
             if (tabId === 'admins') loadAdmins();
             if (tabId === 'referral') loadReferralTab();
+        }
+
+        let _ratingsFieldMeta = [];
+
+        function _ratingsUid() {
+            const raw = document.getElementById('ratings-user-id').value.trim();
+            const uid = parseInt(raw, 10);
+            if (!raw || !Number.isFinite(uid) || uid < 1) return null;
+            return uid;
+        }
+
+        function _showRatingsAlert(message, ok) {
+            const el = document.getElementById('ratings-alert');
+            if (!el) return;
+            el.innerText = message;
+            el.className = ok ? 'alert alert-success' : 'alert alert-error';
+            el.style.display = 'block';
+        }
+
+        function _renderRatingsForm(fields, ratings) {
+            const box = document.getElementById('ratings-fields');
+            if (!box) return;
+            _ratingsFieldMeta = fields || [];
+            if (!_ratingsFieldMeta.length) {
+                box.innerHTML = '<p class="hint">' + t('admin.ratings_empty') + '</p>';
+                return;
+            }
+            box.innerHTML = _ratingsFieldMeta.map(f => {
+                const val = ratings && ratings[f.key] != null ? ratings[f.key] : 0;
+                const min = f.min != null ? f.min : 0;
+                return `<div class="form-group">
+                    <label for="rating-${f.key}">${f.label || f.key}</label>
+                    <input type="number" id="rating-${f.key}" data-rating-key="${f.key}" min="${min}" step="1" value="${val}">
+                </div>`;
+            }).join('');
+        }
+
+        async function loadUserRatings() {
+            const uid = _ratingsUid();
+            if (!uid) {
+                _showRatingsAlert(t('admin.err_user_id'), false);
+                return;
+            }
+            try {
+                const res = await fetch('/api/admin/user-ratings?user_id=' + encodeURIComponent(uid), {
+                    credentials: 'same-origin'
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok || !data.success) {
+                    _showRatingsAlert(data.message || t('admin.generic_error'), false);
+                    document.getElementById('ratings-user-label').style.display = 'none';
+                    _renderRatingsForm([], {});
+                    return;
+                }
+                const label = document.getElementById('ratings-user-label');
+                label.innerText = (data.username || ('user_' + uid)) + ' (ID ' + uid + ')';
+                label.style.display = 'block';
+                _renderRatingsForm(data.fields || [], data.ratings || {});
+                _showRatingsAlert(t('admin.ratings_loaded'), true);
+            } catch (e) {
+                _showRatingsAlert(t('admin.network_error'), false);
+            }
+        }
+
+        async function saveUserRatings() {
+            const uid = _ratingsUid();
+            if (!uid) {
+                _showRatingsAlert(t('admin.err_user_id'), false);
+                return;
+            }
+            const ratings = {};
+            (_ratingsFieldMeta || []).forEach(f => {
+                const inp = document.getElementById('rating-' + f.key);
+                if (!inp) return;
+                ratings[f.key] = parseInt(inp.value, 10) || 0;
+            });
+            if (!Object.keys(ratings).length) {
+                _showRatingsAlert(t('admin.ratings_load_first'), false);
+                return;
+            }
+            if (!confirm(t('admin.ratings_confirm_save'))) return;
+            try {
+                const res = await fetch('/api/admin/user-ratings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ user_id: uid, ratings })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok || !data.success) {
+                    _showRatingsAlert(data.message || t('admin.generic_error'), false);
+                    return;
+                }
+                _renderRatingsForm(_ratingsFieldMeta, data.ratings || ratings);
+                _showRatingsAlert(data.message || t('admin.saved_ok'), true);
+            } catch (e) {
+                _showRatingsAlert(t('admin.network_error'), false);
+            }
         }
 
         function showReferralAlert(elId, message, ok) {

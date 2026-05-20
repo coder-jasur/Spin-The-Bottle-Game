@@ -204,6 +204,7 @@ async def send_stars_invoice_to_chat(
     db_user_id: int,
     stars: int,
     *,
+    hearts: int | None = None,
     title: str | None = None,
     lang: str | None = None,
 ) -> bool:
@@ -221,9 +222,14 @@ async def send_stars_invoice_to_chat(
         return False
 
     loc = lang or get_locale()
-    payload = build_invoice_payload(db_user_id, stars)
-    label = title or translate(loc, _INVOICE_TITLE_MSGID, stars=stars)
+    payload = build_invoice_payload(db_user_id, stars, hearts=hearts)
+    if hearts and hearts > 0:
+        label = title or f"❤️ {hearts} — {stars} ★"
+    else:
+        label = title or translate(loc, _INVOICE_TITLE_MSGID, stars=stars)
     description = translate(loc, _INVOICE_DESC_MSGID, stars=stars)[:255]
+    if hearts and hearts > 0:
+        description = f"❤️ {hearts} — {description}"[:255]
     price_label = translate(loc, _INVOICE_PRICE_LABEL_MSGID, stars=stars)
     try:
         await send_stars_banner_to_chat(bot, chat_id, lang=loc)

@@ -21,6 +21,14 @@ _SCHEMA_PATCHES: tuple[str, ...] = (
     """,
     """
     ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS frame TEXT NOT NULL DEFAULT ''
+    """,
+    """
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS stone TEXT NOT NULL DEFAULT ''
+    """,
+    """
+    ALTER TABLE users
     ADD COLUMN IF NOT EXISTS harem_courts_received BIGINT NOT NULL DEFAULT 0
     """,
     # Eski migratsiya olib tashlandi: harem_price ≠ 2-yurak yig'indisi; noto'g'ri raqam berardi.
@@ -47,6 +55,15 @@ async def apply_schema_patches(engine: AsyncEngine) -> None:
                 await conn.execute(text(stmt))
         except Exception as e:
             log.warning("schema patch skipped: %s", e)
+
+    try:
+        from src.app.database.schema_auto_sync import sync_schema_from_models
+
+        n = await sync_schema_from_models(engine)
+        if n:
+            log.info("schema auto-sync: %s yangi ustun qo'shildi", n)
+    except Exception as e:
+        log.warning("schema auto-sync failed: %s", e)
 
     try:
         from src.app.database.sequence_sync import sync_all_sequences_engine

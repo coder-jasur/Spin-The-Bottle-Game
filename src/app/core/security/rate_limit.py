@@ -15,24 +15,16 @@ log = logging.getLogger("spinbottle.security.ratelimit")
 
 
 def ws_client_ip(ws) -> str:
-    """WebSocket ulanish IP (proxy orqali)."""
-    headers = {k.decode().lower(): v.decode() for k, v in (ws.scope.get("headers") or [])}
-    forwarded = (headers.get("x-forwarded-for") or "").split(",")[0].strip()
-    if forwarded:
-        return forwarded[:64]
-    client = ws.scope.get("client")
-    if client and client[0]:
-        return str(client[0])[:64]
-    return "unknown"
+    """WebSocket ulanish IP (proxy / Cloudflare orqali)."""
+    from src.app.core.geo import ws_client_ip as _ws_ip
+
+    return _ws_ip(ws)
 
 
 def client_ip(request: Request) -> str:
-    forwarded = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
-    if forwarded:
-        return forwarded[:64]
-    if request.client and request.client.host:
-        return request.client.host[:64]
-    return "unknown"
+    from src.app.core.geo import client_ip as _http_ip
+
+    return _http_ip(request)
 
 
 class _MemoryLimiter:

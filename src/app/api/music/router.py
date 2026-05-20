@@ -271,7 +271,21 @@ def _local_json_catalog_enabled() -> bool:
     return os.getenv("MUSIC_USE_LOCAL_JSON", "").strip().lower() in ("1", "true", "yes", "on")
 
 
-def _rapidapi_yt_catalog_active() -> bool:
+def _is_video_catalog_type(track_type: str | None) -> bool:
+    """Klient video tab: type=movie → provider mv/yt (YouTube iframe)."""
+    return (track_type or "").strip().lower() == "movie"
+
+
+def _row_is_video_catalog(row: dict[str, Any]) -> bool:
+    t = str(row.get("type") or "").strip().lower()
+    p = str(row.get("provider") or "").strip().lower()
+    return t == "movie" or p in ("mv", "yt")
+
+
+def _rapidapi_yt_catalog_active(track_type: str | None = None) -> bool:
+    """RapidAPI faqat audio (song). mv/yt (movie) — faqat yt-dlp."""
+    if _is_video_catalog_type(track_type):
+        return False
     try:
         from src.app.api.music.service import rapidapi_yt_enabled
     except ImportError:
@@ -426,7 +440,7 @@ async def _popular_rows_from_db(
             rows = await repo.list_popular(limit=count, track_type=track_type)
     except Exception:
         return []
-    if _rapidapi_yt_catalog_active() and track_type != "movie":
+    if _rapidapi_yt_catalog_active(track_type):
         from src.app.api.music.service import normalize_youtube_id
 
         rows = [
@@ -441,7 +455,7 @@ async def _popular_fallback_rows(
     request: Request, *, count: int, pairs: list[tuple[str, str]]
 ) -> list[dict[str, Any]]:
     track_type = _track_type_from_pairs(pairs)
-    if _rapidapi_yt_catalog_active() and track_type != "movie":
+    if _rapidapi_yt_catalog_active(track_type):
         from src.app.api.music.service import rapidapi_yt_search_async
 
         ra = await rapidapi_yt_search_async("", count, track_type)
@@ -577,7 +591,7 @@ async def _resolve_rows_by_ids(
 
     if missing:
         yt_ids = [i for i in missing if _looks_like_youtube_id(i)]
-        if yt_ids and _rapidapi_yt_catalog_active():
+        if yt_ids and _rapidapi_yt_catalog_active(track_type):
             from src.app.api.music.service import rapidapi_yt_videos_by_ids_async
 
             ra_rows = await rapidapi_yt_videos_by_ids_async(yt_ids, track_type)
@@ -1050,7 +1064,24 @@ async def api_music_check(request: Request, response: Response):
             media_type="application/json; charset=utf-8",
         )
 
-    if _rapidapi_yt_catalog_active():
+    if isinstance(song, dict) and _row_is_video_catalog(song):
+        from src.app.api.music.service import normalize_youtube_id
+
+        vid = _song_video_id(song)
+        ok = bool(normalize_youtube_id(vid))
+        return _json_response(
+            {
+                "success": ok,
+                "ok": ok,
+                "id": vid,
+                "error": None if ok else "YouTube video id kerak",
+                "song_data": song,
+            },
+            response,
+            catalog="ytdlp-video-check",
+        )
+
+    if _rapidapi_yt_catalog_active("song"):
         from src.app.api.music.service import (
             normalize_youtube_id,
             rapidapi_yt_mp3_url_async,
@@ -1127,7 +1158,7 @@ async def api_music_search(request: Request, response: Response):
     )
     from src.app.api.music.service import ytdlp_available, ytdlp_search_async
 
-    if rapidapi_yt_enabled() and track_type != "movie":
+    if _rapidapi_yt_catalog_active(track_type):
         ra_rows = await rapidapi_yt_search_async(q, count, track_type)
         if ra_rows:
             await _cache_rows_to_db(request, ra_rows)
@@ -1233,7 +1264,7 @@ async def api_music_popular(request: Request, response: Response):
     )
     from src.app.api.music.service import ytdlp_available, ytdlp_search_async
 
-    if _rapidapi_yt_catalog_active() and track_type != "movie":
+    if _rapidapi_yt_catalog_active(track_type):
         ra_rows = await rapidapi_yt_search_async("", count, track_type)
         if ra_rows:
             await _popular_cache_set(cache_key, ra_rows)
@@ -1257,7 +1288,9 @@ async def api_music_popular(request: Request, response: Response):
 
     cached_rows = await _popular_cache_get(cache_key)
     if cached_rows:
-        if not _rapidapi_yt_catalog_active() or _cache_has_youtube_ids(cached_rows):
+        if not _rapidapi_yt_catalog_active(track_type) or _cache_has_youtube_ids(
+            cached_rows
+        ):
             return _json_response(cached_rows[:count], response, catalog="cache")
 
     proxied = await _try_proxy_upstream(
@@ -1315,7 +1348,7 @@ async def api_music_get_by_ids_and_popular(request: Request, response: Response)
         await _cache_rows_to_db(request, data)
         return _json_response(data, response, catalog="mix-by-ids")
 
-    if not ids and _rapidapi_yt_catalog_active() and tt != "movie":
+    if not ids and _rapidapi_yt_catalog_active(tt):
         from src.app.api.music.service import rapidapi_yt_search_async
 
         ra_rows = await rapidapi_yt_search_async("", count, tt)
@@ -1335,7 +1368,7 @@ async def api_music_get_by_ids_and_popular(request: Request, response: Response)
 
     cached_rows = await _popular_cache_get(cache_key)
     if cached_rows:
-        if not _rapidapi_yt_catalog_active() or _cache_has_youtube_ids(cached_rows):
+        if not _rapidapi_yt_catalog_active(tt) or _cache_has_youtube_ids(cached_rows):
             return _json_response(cached_rows[:count], response, catalog="cache")
 
     proxied: Response | None = None

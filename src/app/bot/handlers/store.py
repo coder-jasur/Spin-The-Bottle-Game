@@ -16,7 +16,7 @@ from aiogram.types import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.app.api.ws.constants import HEARTS_PACKAGES
+from src.app.api.ws.constants import HEARTS_PACKAGES, hearts_for_stars_price
 from src.app.bot.i18n import _, get_locale
 from src.app.bot.miniapp_url import miniapp_index_url
 from src.app.core.config import load_config
@@ -35,9 +35,9 @@ _STORE_BUY_PREFIX = "store_buy:"
 
 _STORE_TEXT_MSGID = (
     "⭐ <b>Stars store</b>\n\n"
-    "Choose a package or <b>Custom amount</b> to enter your own value.\n"
-    "After payment, the same number of ★ Stars will be added to your balance.\n\n"
-    "Select a package or amount — Telegram invoice will arrive."
+    "• <b>Packages</b> — pay with Telegram Stars, get ❤️ hearts (same as in the game).\n"
+    "• <b>Custom amount</b> — top up your ★ Stars balance 1:1 for in-game purchases.\n\n"
+    "Select a package or custom amount — Telegram invoice will arrive."
 )
 
 
@@ -50,9 +50,10 @@ def _store_keyboard() -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     row: list[InlineKeyboardButton] = []
     for stars in amounts:
+        hearts = hearts_for_stars_price(stars) or 0
         row.append(
             InlineKeyboardButton(
-                text=f"⭐ {stars}",
+                text=f"⭐{stars} → ❤️{hearts}",
                 callback_data=f"{_STORE_BUY_PREFIX}{stars}",
             )
         )
@@ -92,6 +93,7 @@ async def _send_invoice(
     db_user_id: int,
     stars: int,
     *,
+    hearts: int | None = None,
     lang: str | None = None,
 ) -> bool:
     if stars < MIN_TOPUP_STARS or stars > MAX_TOPUP_STARS:
@@ -100,6 +102,7 @@ async def _send_invoice(
         chat_id,
         db_user_id,
         stars,
+        hearts=hearts,
         lang=lang or get_locale(),
     )
 
@@ -244,9 +247,17 @@ async def on_store_buy(query: CallbackQuery, session: AsyncSession) -> None:
         )
         return
 
-    ok = await _send_invoice(query.message.chat.id, int(user.id), stars)
+    hearts = hearts_for_stars_price(stars)
+    ok = await _send_invoice(
+        query.message.chat.id,
+        int(user.id),
+        stars,
+        hearts=hearts,
+    )
     if ok:
-        await query.answer(_("Invoice sent — confirm payment"))
+        await query.answer(
+            _("Invoice sent — confirm payment"),
+        )
     else:
         await query.answer(
             _(

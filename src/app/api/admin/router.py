@@ -14,7 +14,29 @@ from src.app.database.repositories.game import GameRepository
 from src.app.database.repositories.referral import ReferralRepository
 from src.app.database.models import User, AdminActionLog, BroadcastMessage, Wallet, Admins
 from src.app.database.models.stats import UserStats
-from src.app.api.ws.game_manager import manager as game_manager
+
+# game_manager — lazy import (fayl buzilsa admin panel boshqa bo'limlari ishlashi uchun)
+def _get_game_manager():
+    try:
+        from src.app.api.ws.game_manager import manager
+
+        return manager
+    except Exception:
+        return None
+
+
+# Admin «Reytingni boshqarish» — users jadvali ustunlari
+_ADMIN_RATING_FIELDS: dict[str, dict] = {
+    "kisses": {"label": "O'pishlar (kisses)", "min": 0},
+    "dj": {"label": "DJ ball", "min": 0},
+    "emotion": {"label": "Emotsiyalar (gestures)", "min": 0},
+    "expense": {"label": "Sovg'a sarfi (price TOP)", "min": 0},
+    "importance": {"label": "Muhimlik", "min": 0},
+    "harem_courts_received": {"label": "2 yurak (uxajor yig'indisi)", "min": 0},
+    "harem_price": {"label": "Keyingi uxajor narxi", "min": 1},
+    "harem_owner_paid_price": {"label": "Joriy uxajor to'lagan summa", "min": 0},
+    "harem_owner_id": {"label": "Uxajor user ID (0 = yo'q)", "min": 0},
+}
 from src.app.api.ws.constants import GIFT_LOVE_UNLIMITED_MIN
 from src.app.core.security.validators import sanitize_search_text
 
@@ -149,10 +171,159 @@ async def admin_user_metrics(
             "expense": int(getattr(user, "expense", 0) or 0),
             "importance": int(getattr(user, "importance", 0) or 0),
             "harem_price": int(getattr(user, "harem_price", 0) or 0),
+            "harem_courts_received": int(
+                getattr(user, "harem_courts_received", 0) or 0
+            ),
+            "harem_owner_paid_price": int(
+                getattr(user, "harem_owner_paid_price", 0) or 0
+            ),
+            "harem_owner_id": int(getattr(user, "harem_owner_id", 0) or 0),
             "gift_love_stock": int(getattr(user, "gift_love_stock", 0) or 0),
         },
         "user_stats": stats,
     }
+
+
+def _rating_values_from_user(user: User) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for key in _ADMIN_RATING_FIELDS:
+        if key == "harem_owner_id":
+            out[key] = int(getattr(user, key, 0) or 0)
+        else:
+            out[key] = int(getattr(user, key, 0) or 0)
+    return out
+
+
+async def _sync_live_user_ratings(user_id: int, values: dict[str, int]) -> bool:
+    gm = _get_game_manager()
+    if not gm:
+        return False
+    pl = gm.find_player_by_db_id(int(user_id))
+    if not pl:
+        return False
+    for key, val in values.items():
+        if hasattr(pl, key):
+            setattr(pl, key, int(val))
+    tid = getattr(pl, "table_id", None)
+    if not tid:
+        return True
+    try:
+        part = pl.to_participant()
+        await gm._attach_harem_owner_payload(
+            part, int(getattr(pl, "harem_owner_id", 0) or 0)
+        )
+        await gm.broadcast(str(tid), gm._make_update_user_payload(part))
+    except Exception:
+        return False
+    return True
+
+
+@router.get("/api/admin/user-ratings")
+async def admin_get_user_ratings(
+    user_id: int,
+    session: AsyncSession = Depends(get_db),
+    admin_id: int = Depends(get_current_admin),
+):
+    """Reyting maydonlarini o'qish (admin forma)."""
+    user = (
+        await session.execute(select(User).where(User.id == int(user_id)))
+    ).scalar_one_or_none()
+    if not user:
+        return JSONResponse({"success": False, "message": "User topilmadi"}, status_code=404)
+    return {
+        "success": True,
+        "user_id": int(user.id),
+        "username": user.username or user.login or f"user_{user.id}",
+        "fields": [
+            {"key": k, **meta} for k, meta in _ADMIN_RATING_FIELDS.items()
+        ],
+        "ratings": _rating_values_from_user(user),
+    }
+
+
+@router.post("/api/admin/user-ratings")
+async def admin_set_user_ratings(
+    data: dict = Body(...),
+    session: AsyncSession = Depends(get_db),
+    admin_id: int = Depends(get_current_admin),
+):
+    """Reyting sonlarini to'g'ridan-to'g'ri o'rnatish."""
+    try:
+        target_id = int(data.get("user_id"))
+    except (TypeError, ValueError):
+        return JSONResponse(
+            {"success": False, "message": "Foydalanuvchi ID noto'g'ri"},
+            status_code=400,
+        )
+
+    raw = data.get("ratings")
+    if not isinstance(raw, dict) or not raw:
+        return JSONResponse(
+            {"success": False, "message": "ratings {} kerak"},
+            status_code=400,
+        )
+
+    user = (
+        await session.execute(select(User).where(User.id == target_id))
+    ).scalar_one_or_none()
+    if not user:
+        return JSONResponse({"success": False, "message": "User topilmadi"}, status_code=404)
+
+    updates: dict[str, int] = {}
+    for key, meta in _ADMIN_RATING_FIELDS.items():
+        if key not in raw:
+            continue
+        try:
+            val = int(raw[key])
+        except (TypeError, ValueError):
+            return JSONResponse(
+                {
+                    "success": False,
+                    "message": f"{key}: butun son bo'lishi kerak",
+                },
+                status_code=400,
+            )
+        min_v = int(meta.get("min", 0))
+        if val < min_v:
+            return JSONResponse(
+                {
+                    "success": False,
+                    "message": f"{key}: minimum {min_v}",
+                },
+                status_code=400,
+            )
+        updates[key] = val
+
+    if not updates:
+        return JSONResponse(
+            {"success": False, "message": "Hech qanday maydon yuborilmagan"},
+            status_code=400,
+        )
+
+    old = {k: _rating_values_from_user(user)[k] for k in updates}
+    for key, val in updates.items():
+        setattr(user, key, val)
+
+    admin_log = AdminActionLog(
+        admin_id=admin_id,
+        target_user_id=target_id,
+        action="set_user_ratings",
+        amount=0,
+        details=f"Admin {admin_id} ratings {target_id}: {old} -> {updates}",
+    )
+    session.add(admin_log)
+    await session.commit()
+
+    synced = await _sync_live_user_ratings(target_id, _rating_values_from_user(user))
+
+    return {
+        "success": True,
+        "message": "Reytinglar saqlandi"
+        + (" — onlayn o'yinchi yangilandi" if synced else ""),
+        "ratings": _rating_values_from_user(user),
+        "synced_online": synced,
+    }
+
 
 @router.get("/api/admin/users/complaints")
 async def get_complained_users(
@@ -366,7 +537,10 @@ async def grant_love_cocktail(
     session.add(admin_log)
     await session.commit()
 
-    synced = await game_manager.admin_sync_gift_love_stock(target_id, new_stock)
+    gm = _get_game_manager()
+    synced = False
+    if gm and hasattr(gm, "admin_sync_gift_love_stock"):
+        synced = await gm.admin_sync_gift_love_stock(target_id, new_stock)
 
     if new_stock == GIFT_LOVE_UNLIMITED_MIN:
         display = "999+ (cheksiz)"
@@ -650,9 +824,11 @@ async def manage_admin(
     await session.commit()
 
     if wallet_reset:
-        await game_manager.admin_sync_wallet_after_reset(
-            target_user.id, still_admin=wallet_still_admin
-        )
+        gm = _get_game_manager()
+        if gm and hasattr(gm, "admin_sync_wallet_after_reset"):
+            await gm.admin_sync_wallet_after_reset(
+                target_user.id, still_admin=wallet_still_admin
+            )
 
     return {"success": True, "message": f"Admin muvaffaqiyatli {action} qilindi"}
 
@@ -672,7 +848,18 @@ async def admin_live_dashboard(
     admin_id: int = Depends(get_current_admin),
 ):
     """Onlayn o'yinchilar + Telegram Stars daromadi (real vaqt)."""
-    online = game_manager.get_online_presence_stats()
+    gm = _get_game_manager()
+    online = (
+        gm.get_online_presence_stats()
+        if gm and hasattr(gm, "get_online_presence_stats")
+        else {
+            "websocket_connections": 0,
+            "unique_registered": 0,
+            "guests": 0,
+            "total_in_rooms": 0,
+            "active_tables": 0,
+        }
+    )
     repo = GameRepository(session)
     revenue = await repo.get_tg_stars_revenue_stats()
     return {

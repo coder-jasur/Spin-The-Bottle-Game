@@ -13,6 +13,27 @@ router = APIRouter(tags=["Web"])
 base_dir = pathlib.Path(__file__).resolve().parents[2]
 site_dir = base_dir / "site"
 
+_HTML_MEDIA = "text/html; charset=utf-8"
+
+
+def _read_html_utf8(path: pathlib.Path) -> str:
+    """PyCharm/Windows ba'zan UTF-16 LE saqlaydi — brauzer matn sifatida ko'rsatadi."""
+    raw = path.read_bytes()
+    if raw.startswith(b"\xff\xfe"):
+        return raw.decode("utf-16-le")
+    if raw.startswith(b"\xfe\xff"):
+        return raw.decode("utf-16-be")
+    if len(raw) > 4 and raw[1:2] == b"\x00" and raw[3:4] == b"\x00":
+        return raw.decode("utf-16-le")
+    return raw.decode("utf-8")
+
+
+def _html_response(name: str) -> FileResponse:
+    from fastapi.responses import HTMLResponse
+
+    path = site_dir / name
+    return HTMLResponse(content=_read_html_utf8(path), media_type=_HTML_MEDIA)
+
 
 def _auth_payload_from_request(request: Request) -> Optional[dict]:
     """JWT, legacy `["id"]` cookie, yoki `user_id` query’dagi o‘yin sessiya tokeni.
@@ -72,13 +93,13 @@ def _exit_back_url(request: Request) -> str:
 
 @router.get("/banned")
 async def get_banned(request: Request):
-    return FileResponse(site_dir / "banned.html")
+    return _html_response("banned.html")
 
 
 @router.get("/stars-support")
 async def get_stars_support():
     """Sayt foydalanuvchilari: Stars yetmasa @SpinTheBottleSupport ga yo'naltirish."""
-    return FileResponse(site_dir / "stars_support.html")
+    return _html_response("stars_support.html")
 
 @router.get("/")
 async def get_login(request: Request, session: AsyncSession = Depends(get_db)):
@@ -94,7 +115,7 @@ async def get_login(request: Request, session: AsyncSession = Depends(get_db)):
             return RedirectResponse(url="/index")
         else:
             # Agar bazada yo'q bo'lsa, barcha cookielarni tozalaymiz (Agressiv Logout)
-            response = FileResponse(site_dir / "login.html")
+            response = _html_response("login.html")
             for cookie in ["device_user_ids", "accessToken", "refreshToken", "language", "user_id"]:
                 response.delete_cookie(key=cookie, path="/")
             return response
@@ -119,7 +140,7 @@ async def get_index(request: Request, session: AsyncSession = Depends(get_db)):
     payload = _auth_payload_from_request(request)
     if not payload:
         # Mini App: index.html ichida Telegram auth (tg_auto_auth.js)
-        return FileResponse(site_dir / "index.html")
+        return _html_response("index.html")
 
     # Bazada bormi?
     from src.app.database.repositories.user import UserRepository
@@ -144,7 +165,7 @@ async def get_index(request: Request, session: AsyncSession = Depends(get_db)):
         print(f">>> GAME SESSION redirect: user_id={user.id} -> {path[:80]}...", flush=True)
         return RedirectResponse(url=path)
 
-    return FileResponse(site_dir / "index.html")
+    return _html_response("index.html")
 
 @router.get("/welcome")
 async def get_welcome(request: Request, session: AsyncSession = Depends(get_db)):
@@ -194,7 +215,7 @@ async def get_welcome(request: Request, session: AsyncSession = Depends(get_db))
                 )
             )
         
-    return FileResponse(site_dir / "welcome.html")
+    return _html_response("welcome.html")
 
 @router.get("/exit-game")
 async def exit_game(request: Request):

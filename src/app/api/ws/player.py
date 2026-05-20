@@ -187,6 +187,8 @@ class Player:
         self.achievements: Dict[str, int] = {}
         # Mukofot qaysi darajagacha olingan (qayta claim oldini olish).
         self.achievements_bonus_claimed: Dict[str, int] = {}
+        # Qaysi darajalar uchun `achievement_bonus` modali allaqachon yuborilgan.
+        self._achievement_notified: Dict[str, int] = {}
         self.is_admin: bool = False
 
     @staticmethod
@@ -388,6 +390,8 @@ class Player:
             getattr(db_user, "harem_owner_paid_price", 0) or 0
         )
         p.friends_privacy = getattr(db_user, "friends_privacy", None) or "everyone"
+        p.frame = str(getattr(db_user, "frame", None) or "")
+        p.stone = str(getattr(db_user, "stone", None) or "")
         p.invited_guests = int(getattr(db_user, "invited_guests", 0) or 0)
         p.kickout_streak_count = int(getattr(db_user, "kickout_streak_count", 0) or 0)
         p.kickout_last_at = getattr(db_user, "kickout_last_at", None)
@@ -399,9 +403,14 @@ class Player:
             for ua in ach_rel:
                 key = getattr(getattr(ua, "achievement", None), "key", None)
                 if key:
-                    p.achievements[key] = int(getattr(ua, "level", 0) or 0)
+                    lvl = int(getattr(ua, "level", 0) or 0)
+                    p.achievements[key] = lvl
+                    claimed = int(getattr(ua, "bonus_claimed_level", 0) or 0)
+                    if claimed > 0:
+                        p.achievements_bonus_claimed[key] = claimed
         except Exception:
             pass
+        p._achievement_notified = dict(p.achievements)
 
         p.grant_default_owned_items()
 
