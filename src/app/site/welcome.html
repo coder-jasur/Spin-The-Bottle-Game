@@ -210,8 +210,9 @@
             } catch (e) { }
         })();
     </script>
-    <script defer="defer" src="./static/js/main.be3d9225.js?v=13"></script>
-    <link href="./static/css/main.a32329e6.css?v=7" rel="stylesheet">
+    <script src="https://telegram.org/js/telegram-web-app.js?59"></script>
+    <script src="./static/tg_auto_auth.js?v=18"></script>
+    <link href="./static/css/main.a32329e6.css?v=8" rel="stylesheet">
 </head>
 
 <body>
@@ -230,6 +231,47 @@
             e && (e.classList.add("hidden"),
                 setTimeout((() => e.parentNode && e.parentNode.removeChild(e)), 400))
         };
+        (function () {
+            function loadLobby() {
+                var s = document.createElement("script");
+                s.defer = true;
+                s.src = "./static/js/main.be3d9225.js?v=15";
+                document.head.appendChild(s);
+            }
+            function bootWelcome() {
+                var hint = document.querySelector(".hint");
+                if (!window.TgAutoAuth) {
+                    loadLobby();
+                    return;
+                }
+                if (window.TgAutoAuth.captureReferralParam) {
+                    window.TgAutoAuth.captureReferralParam();
+                }
+                var inTg = !!(window.Telegram && window.Telegram.WebApp);
+                if (window.TgAutoAuth.hasAuthToken()) {
+                    loadLobby();
+                    return;
+                }
+                if (!inTg) {
+                    loadLobby();
+                    return;
+                }
+                if (hint) hint.textContent = "Avtorizatsiya...";
+                window.TgAutoAuth.run({ forceTelegram: true }).then(function (res) {
+                    if (res && res.ok) {
+                        if (hint) hint.textContent = "Yuklanmoqda...";
+                        location.replace("/welcome");
+                        return;
+                    }
+                    loadLobby();
+                });
+            }
+            if (document.readyState === "loading") {
+                document.addEventListener("DOMContentLoaded", bootWelcome);
+            } else {
+                bootWelcome();
+            }
+        })();
     </script>
 
     <script src="./libs/jquery-1.12.2.min.js?v=4.0.7"></script>

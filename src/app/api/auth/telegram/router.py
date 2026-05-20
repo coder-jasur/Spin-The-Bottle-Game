@@ -229,9 +229,12 @@ async def _telegram_auth_impl(
     if isinstance(refresh_token, bytes):
         refresh_token = refresh_token.decode("utf-8")
 
+    from src.app.services.telegram_bot_info import ensure_app_bot_username
+
+    bot_username = await ensure_app_bot_username(request.app)
     invite = build_telegram_invite_bundle(
         user.referral_id,
-        bot_username=settings.telegram_miniapp_bot,
+        bot_username=bot_username,
         mini_slug=settings.telegram_miniapp_slug,
         share_text=settings.telegram_invite_share_text,
     )
@@ -244,7 +247,7 @@ async def _telegram_auth_impl(
         language_code=user.language_code,
         telegram_language_code=data.language_code,
         referral_id=user.referral_id,
-        bot_username=settings.telegram_miniapp_bot,
+        bot_username=bot_username,
         mini_slug=settings.telegram_miniapp_slug,
     )
 
@@ -295,12 +298,13 @@ async def game_entry(request: Request, session: AsyncSession = Depends(get_db)):
         )
 
     settings = load_config()
+    bot_username = await ensure_app_bot_username(request.app)
     path = build_game_index_path(
         request,
         user.id,
         language_code=user.language_code,
         referral_id=user.referral_id,
-        bot_username=settings.telegram_miniapp_bot,
+        bot_username=bot_username,
         mini_slug=settings.telegram_miniapp_slug,
     )
     return Response(

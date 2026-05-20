@@ -1,4 +1,4 @@
-﻿"""
+"""
 GameManager — to'liq tuzatilgan va kengaytirilgan versiya.
 Xonalar ro'yxati, real foydalanuvchi ma'lumotlari, to'liq statistika.
 """
@@ -766,14 +766,18 @@ class GameManager:
                 else:
                     log.warning(f"Session invalid/expired: {user_id}")
 
-        # 2. DB dan yuklash
+        # 2. DB dan yuklash (id = users.id yoki Telegram tg_id)
         if real_uid:
             try:
                 async with self._db() as repo:
                     db_user = await repo.get_user_with_wallet(real_uid)
+                    if not db_user:
+                        db_user = await repo.get_user(real_uid)
+                        if db_user:
+                            real_uid = int(db_user.id)
                     if db_user and not db_user.wallet:
-                        await repo.ensure_wallet(real_uid)
-                        db_user = await repo.get_user_with_wallet(real_uid)
+                        await repo.ensure_wallet(int(db_user.id))
+                        db_user = await repo.get_user_with_wallet(int(db_user.id))
                     if db_user:
                         await repo.sync_daily_login_streak(db_user)
             except Exception as e:

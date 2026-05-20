@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from src.app.api.config.server_json import build_server_json
 from src.app.core.config import load_config
+from src.app.services.telegram_bot_info import ensure_app_bot_username
 
 router = APIRouter(tags=["Config"])
 
@@ -19,6 +20,24 @@ async def get_server_json(request: Request):
     settings = getattr(request.app.state, "settings", None) or load_config()
     return JSONResponse(
         build_server_json(request, settings),
+        headers=_ASSETS_NO_CACHE,
+    )
+
+
+@router.get("/api/config/telegram-miniapp")
+async def get_telegram_miniapp_config(request: Request):
+    """Referral / share: bot @username BOT_TOKEN (getMe) dan."""
+    settings = getattr(request.app.state, "settings", None) or load_config()
+    bot = await ensure_app_bot_username(request.app)
+    slug = (settings.telegram_miniapp_slug or "spin_bottle").strip().strip("/")
+    base = f"https://t.me/{bot}/{slug}"
+    return JSONResponse(
+        {
+            "bot_username": bot,
+            "mini_slug": slug,
+            "mini_app_base_url": base,
+            "share_text": settings.telegram_invite_share_text or "",
+        },
         headers=_ASSETS_NO_CACHE,
     )
 

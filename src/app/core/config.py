@@ -23,7 +23,7 @@ class Settings:
     db_password: str
     db_host: str
     db_port: int = 5432
-    # Telegram Mini App taklif havolalari (t.me/<bot>/<slug>?startapp=<referral_id>)
+    # Mini App taklif: asosan BOT_TOKEN → getMe @username; bu faqat fallback
     telegram_miniapp_bot: str = "SpinbottleTgBot"
     telegram_miniapp_slug: str = "spin_bottle"
     telegram_invite_share_text: str = (

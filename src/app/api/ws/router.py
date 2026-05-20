@@ -88,16 +88,18 @@ def _user_id_from_ws_cookies(ws: WebSocket) -> int | None:
     return None
 
 
-def _resolve_user_from_token(
-    token: str, ws: WebSocket | None = None
+async def _resolve_user_from_token(
+    token: str,
+    ws: WebSocket | None = None,
+    *,
+    auth: str | None = None,
 ) -> tuple[str, int | None]:
-    """JWT / session token (+ ixtiyoriy WS cookie) → (user_id_str, db_uid_or_None)."""
+    """JWT / session / Telegram tg_id + initData → (user_id_str, db_uid_or_None)."""
     uid_int = _user_id_from_token(token)
     if uid_int:
-        log.info(f"WS token resolved: user_id={uid_int}")
+        log.info("WS token resolved: user_id=%s", uid_int)
         return str(uid_int), uid_int
 
-    # Cookie zaxirasi: server restart yoki eskirgan sessiya tokeni
     if ws is not None:
         cookie_uid = _user_id_from_ws_cookies(ws)
         if cookie_uid:
@@ -106,13 +108,42 @@ def _resolve_user_from_token(
 
                 game_sessions.create(cookie_uid)
             except Exception as ex:
-                log.debug(f"cookie recover session create: {ex}")
-            log.info(f"WS cookie recovered: user_id={cookie_uid}")
+                log.debug("cookie recover session create: %s", ex)
+            log.info("WS cookie recovered: user_id=%s", cookie_uid)
             return str(cookie_uid), cookie_uid
+
+        # Telegram Mini App: login id = tg_id, auth = initData
+        db_factory = getattr(getattr(ws.app, "state", None), "db", None)
+        settings = getattr(ws.app.state, "settings", None) or load_config()
+        if db_factory and getattr(db_factory, "session_factory", None):
+            try:
+                from src.app.core.geo import client_ip
+                from src.app.services.telegram_webapp_auth import (
+                    resolve_db_user_id_from_login,
+                )
+
+                async with db_factory.session_factory() as session:
+                    db_uid = await resolve_db_user_id_from_login(
+                        session,
+                        token,
+                        auth,
+                        settings.bot_token,
+                        client_ip=client_ip(ws) if ws else None,
+                    )
+                if db_uid:
+                    from src.app.api.game_session import game_sessions
+
+                    game_sessions.create(db_uid)
+                    log.info(
+                        "WS Telegram login: tg/login → db user_id=%s", db_uid
+                    )
+                    return str(db_uid), db_uid
+            except Exception as ex:
+                log.error("WS Telegram resolve xatosi: %s", ex, exc_info=True)
 
     guest_num = random.randint(10000, 99999)
     guest_id = f"guest_{guest_num}"
-    log.warning(f"Guest sifatida kirdi: {guest_id} (token yaroqsiz)")
+    log.warning("Guest sifatida kirdi: %s (token=%r)", guest_id, (token or "")[:40])
     return guest_id, None
 
 
@@ -151,7 +182,7 @@ async def game_websocket(ws: WebSocket):
         )
         if qp_token:
             table_id = str(qp_room)
-            uid_str, uid_int = _resolve_user_from_token(qp_token, ws)
+            uid_str, uid_int = await _resolve_user_from_token(qp_token, ws)
             user_id = uid_str
             player = await manager.connect(ws, table_id, user_id)
             if not player:
@@ -220,7 +251,10 @@ async def game_websocket(ws: WebSocket):
                     continue
 
                 token = packet.get("id", "")
-                uid_str, uid_int = _resolve_user_from_token(token, ws)
+                auth_field = packet.get("auth")
+                uid_str, uid_int = await _resolve_user_from_token(
+                    token, ws, auth=auth_field
+                )
                 user_id = uid_str
 
                 table_id = str(packet.get("room_id", "1"))

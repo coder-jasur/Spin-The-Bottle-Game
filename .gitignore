@@ -9,8 +9,11 @@ wheels/
 # Virtual environments
 .venv
 
+# Local secrets (never commit)
 .env
-
+.env.*
+!.env.example
+.env.ytdlp
 .env.ytdlp.example
 
 # Local cache (game session persistence, smoke-test workspace)

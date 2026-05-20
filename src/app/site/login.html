@@ -85,7 +85,7 @@
         }
     </style>
     <script src="https://telegram.org/js/telegram-web-app.js?59"></script>
-    <script src="./static/tg_auto_auth.js?v=17"></script>
+    <script src="./static/tg_auto_auth.js?v=18"></script>
     <link href="./static/css/main.a32329e6.css?v=7" rel="stylesheet">
 </head>
 
@@ -114,6 +114,9 @@
                     document.head.appendChild(s);
                 }
                 function autoLoginTG() {
+                    if (window.TgAutoAuth && window.TgAutoAuth.captureReferralParam) {
+                        window.TgAutoAuth.captureReferralParam();
+                    }
                     var hint = document.querySelector(".hint");
                     function go(url) {
                         if (hint) hint.textContent = "O'yinga kirilmoqda...";

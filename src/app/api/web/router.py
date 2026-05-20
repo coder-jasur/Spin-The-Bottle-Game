@@ -170,11 +170,11 @@ async def get_index(request: Request, session: AsyncSession = Depends(get_db)):
 @router.get("/welcome")
 async def get_welcome(request: Request, session: AsyncSession = Depends(get_db)):
     payload = _auth_payload_from_request(request)
-    token = request.cookies.get("device_user_ids")
     print(f">>> DEBUG: get_welcome payload={payload is not None}", flush=True)
-    
+
+    # Cookie yo'q: welcome.html ichida Telegram avto-kirish (referral birinchi ochilish)
     if not payload:
-        return RedirectResponse(url="/")
+        return _html_response("welcome.html")
 
     # Bazada bormi?
     from src.app.database.repositories.user import UserRepository

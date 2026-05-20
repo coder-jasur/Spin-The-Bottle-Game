@@ -32,7 +32,13 @@ def build_game_index_path(
     from src.app.core.config import load_config
 
     settings = getattr(request.app.state, "settings", None) or load_config()
-    bot = (bot_username or settings.telegram_miniapp_bot or "SpinbottleTgBot").strip().lstrip("@")
+    bot = (
+        bot_username
+        or getattr(request.app.state, "telegram_bot_username", None)
+        or settings.telegram_miniapp_bot
+        or "SpinbottleTgBot"
+    )
+    bot = str(bot).strip().lstrip("@")
     slug = (mini_slug or settings.telegram_miniapp_slug or "spin_bottle").strip().strip("/")
     params = {
         "query": "",

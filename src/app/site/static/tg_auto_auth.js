@@ -16,9 +16,58 @@
     var LANG_ALIASES = { kk: "kz", tg: "tj", kaz: "kz", tjk: "tj" };
     var DEFAULT_LANG = "ru";
     var TG_WAIT_MS = 1200;
+    var START_PARAM_WAIT_MS = 3000;
     var FETCH_TIMEOUT_MS = 10000;
     var TELEGRAM_AUTH_TIMEOUT_MS = 45000;
     var TG_AUTH_MAX_RETRIES = 3;
+
+    function getStartParam() {
+        try {
+            var tg = global.Telegram && global.Telegram.WebApp;
+            if (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) {
+                var sp = String(tg.initDataUnsafe.start_param).trim();
+                if (sp) return sp;
+            }
+        } catch (e) { /* ignore */ }
+        try {
+            var up = new URLSearchParams(location.search || "");
+            var q = up.get("ref") || up.get("startapp");
+            if (q) return String(q).trim();
+        } catch (e) { /* ignore */ }
+        return null;
+    }
+
+    /** Taklif kodini localStorage ga saqlash (birinchi ochilishda start_param kechikishi mumkin). */
+    function captureReferralParam() {
+        var ref = getStartParam();
+        if (ref) {
+            try {
+                global.localStorage.setItem("referral_ref", ref);
+            } catch (e) { /* ignore */ }
+            return ref;
+        }
+        try {
+            return global.localStorage.getItem("referral_ref") || null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function waitForStartParam(maxMs, stepMs) {
+        var limit = maxMs != null ? maxMs : START_PARAM_WAIT_MS;
+        var step = stepMs || 50;
+        return new Promise(function (resolve) {
+            var elapsed = 0;
+            function tick() {
+                var ref = captureReferralParam();
+                if (ref) return resolve(ref);
+                if (elapsed >= limit) return resolve(captureReferralParam());
+                elapsed += step;
+                setTimeout(tick, step);
+            }
+            tick();
+        });
+    }
 
     function isRetryableNetworkError(err) {
         if (!err) return false;
@@ -332,11 +381,14 @@
 
     function telegramLogin(options, knownTgUser) {
         options = options || {};
+        captureReferralParam();
         var waitP = knownTgUser
             ? Promise.resolve(knownTgUser)
             : waitForTelegramUser(TG_WAIT_MS, 50);
         return waitP.then(function (tgUser) {
-            return _telegramLoginAfterReady(options, tgUser);
+            return waitForStartParam(START_PARAM_WAIT_MS, 50).then(function () {
+                return _telegramLoginAfterReady(options, tgUser);
+            });
         });
     }
 
@@ -368,10 +420,7 @@
             username: user.username || null,
             photo_url: user.photo_url || null,
             language_code: user.language_code || null,
-            start_param:
-                initData.start_param ||
-                (global.localStorage && global.localStorage.getItem("referral_ref")) ||
-                null,
+            start_param: captureReferralParam() || initData.start_param || null,
         };
 
         return fetchWithTimeout(
@@ -486,6 +535,8 @@
         return true;
     }
 
+    captureReferralParam();
+
     global.TgAutoAuth = {
         run: run,
         hasAuthToken: hasAuthToken,
@@ -496,5 +547,7 @@
         fetchGameEntryUrl: fetchGameEntryUrl,
         goToGame: goToGame,
         telegramLogin: telegramLogin,
+        captureReferralParam: captureReferralParam,
+        clearAuth: clearAuth,
     };
 })(window);
