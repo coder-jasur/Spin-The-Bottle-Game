@@ -5182,9 +5182,10 @@ class GameManager:
         ("total_kisses_rank", "kisses"),
         ("dj_score_rank", "dj"),
         ("gestures_rank", "emotion"),
-        # Klient: 1 yurak = expense, 2 yurak = harem_courts_received (uxajor yig'indisi)
-        ("price_rank", "expense"),
-        ("harem_price_rank", "harem_courts_received"),
+        # Profil stat qatorlari
+        ("price_rank", "expense"),  # 1-yurak: sovg'a sarfi
+        ("harem_price_rank", "harem_courts_received"),  # 2-yurak: uxajor yig'indisi
+        ("court_price_rank", "harem_price"),  # pastki uxajor bloki: court narxi
     )
     TOP_RANK_MAX = 10
 
@@ -6524,7 +6525,10 @@ class GameManager:
                             "top_reset_ms": 0,
                         }
                         continue
-                    rows = await repo.get_top_by_user_column(col_name, limit=size)
+                    top_min = 1 if col_name == "harem_price" else 0
+                    rows = await repo.get_top_by_user_column(
+                        col_name, limit=size, min_score=top_min
+                    )
                     top_items = []
                     for row in rows:
                         item = {
@@ -6540,7 +6544,7 @@ class GameManager:
                     self_rank, self_score = (0, 0)
                     if player.db_id:
                         self_rank, self_score = await repo.get_user_rank_by_column(
-                            int(player.db_id), col_name
+                            int(player.db_id), col_name, min_score=top_min
                         )
 
                     result[top_type] = {

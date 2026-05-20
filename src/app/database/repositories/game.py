@@ -763,6 +763,8 @@ class GameRepository:
         self,
         column_name: str,
         limit: int = 50,
+        *,
+        min_score: int = 0,
     ) -> list:
         """Foydalanuvchi jadvalidagi ustun (kisses/dj/expense/emotion/harem_price)
         bo'yicha to'g'ridan-to'g'ri reyting. UserStats jadvalida bo'lmasa ham
@@ -781,7 +783,7 @@ class GameRepository:
                 User.gender,
                 col.label("score"),
             )
-            .where(col > 0)
+            .where(col > min_score)
             .order_by(desc(col))
             .limit(limit)
         )
@@ -799,7 +801,7 @@ class GameRepository:
         ]
 
     async def get_user_rank_by_column(
-        self, user_id: int, column_name: str
+        self, user_id: int, column_name: str, *, min_score: int = 0
     ) -> tuple[int, int]:
         """(rank, score) qaytaradi. Foydalanuvchi reytingda bo'lmasa (0, score)."""
         from sqlalchemy import desc, func as sa_func
@@ -808,8 +810,8 @@ class GameRepository:
             return (0, 0)
         score_stmt = select(col).where(User.id == user_id)
         score = (await self.session.execute(score_stmt)).scalar() or 0
-        if not score:
-            return (0, 0)
+        if not score or int(score) <= min_score:
+            return (0, int(score or 0))
         rank_stmt = select(sa_func.count()).where(col > score)
         higher = (await self.session.execute(rank_stmt)).scalar() or 0
         return (int(higher) + 1, int(score))
