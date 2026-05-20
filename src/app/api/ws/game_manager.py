@@ -3859,6 +3859,59 @@ class GameManager:
                     self._make_update_user_payload(part),
                 )
 
+    async def _resolve_harem_purchase_target(
+        self, viewer: Player, target_id: str
+    ) -> Tuple[Optional[Player], Optional[int]]:
+        """TOP / boshqa stol / offline: uxajor nishonini DB yoki onlayn topadi."""
+        if not target_id:
+            return None, None
+
+        live = self._find_player_loose(target_id)
+        target_db_id: Optional[int] = None
+        if live and live.db_id:
+            target_db_id = int(live.db_id)
+            await self._refresh_player_harem_from_db(live)
+        else:
+            target_db_id = self._resolve_client_user_ref_to_db_id(target_id, viewer)
+
+        if live:
+            return live, target_db_id
+
+        if target_db_id:
+            try:
+                async with self._db() as repo:
+                    db_u = await repo.get_user_with_wallet(int(target_db_id))
+                if db_u:
+                    return Player.from_db(None, db_u), int(target_db_id)
+            except Exception as e:
+                log.error("_resolve_harem_purchase_target DB: %s", e)
+
+        return None, None
+
+    async def _sync_harem_state_to_live_tables(
+        self, target: Player, owner_db_id: int
+    ) -> None:
+        """Nishon boshqa stolda onlayn bo'lsa — u yerdagi UI ham yangilanadi."""
+        if not target.db_id:
+            return
+        live = self._find_player_by_db_id(int(target.db_id))
+        if not live:
+            return
+        live.harem_owner_id = int(target.harem_owner_id or 0)
+        live.harem_price = int(target.harem_price or 1)
+        live.harem_courts_received = int(
+            getattr(target, "harem_courts_received", 0) or 0
+        )
+        if not live.table_id:
+            return
+        part = live.to_participant()
+        await self._attach_harem_owner_payload(part, owner_db_id)
+        part["harem_price"] = live.harem_price
+        await self.broadcast(
+            live.table_id,
+            self._make_update_user_payload(part),
+        )
+
     async def _handle_harem_purchase(self, table: Table, player: Player, data: dict):
         """
         HTML5 klient: send { type, target_id }; javob o2.fromJSON — target, new_owner,
@@ -3870,19 +3923,22 @@ class GameManager:
             or data.get("receiver_id")
             or ""
         ).strip()
-        target = table.get_player(target_id)
-        if not target:
-            uid = self._resolve_client_user_ref_to_db_id(target_id, player)
-            if uid:
-                target = next(
-                    (pl for pl in table.players.values() if pl.db_id == uid),
-                    None,
-                )
+        target, target_db_id = await self._resolve_harem_purchase_target(
+            player, target_id
+        )
         if not target:
             await self._harem_purchase_fail(player, "invalid_target")
             return
-        if target.id == player.id:
-            await self._handle_harem_release(table, player, target)
+
+        if target.id == player.id or (
+            target_db_id
+            and player.db_id
+            and int(target_db_id) == int(player.db_id)
+        ):
+            if str(target.table_id or "") == str(table.table_id):
+                await self._handle_harem_release(table, player, target)
+            else:
+                await self._harem_purchase_fail(player, "invalid_target")
             return
 
         price = int(target.harem_price)
@@ -3957,19 +4013,29 @@ class GameManager:
         if old_owner_short:
             hp["old_owner"] = old_owner_short
 
+        await self.send_to(player, hp)
         await self.broadcast(table.table_id, hp)
+        await self._handle_get_wallet(player)
 
-        target_participant = target.to_participant()
-        # Ikkala klient ham (legacy + welcome) uxajor ma'lumotini ko'rsin
-        await self._attach_harem_owner_payload(target_participant, buyer_db)
-        target_participant["harem_price"] = target.harem_price
-        await self.broadcast(
-            table.table_id,
-            self._make_update_user_payload(target_participant),
-        )
+        await self._sync_harem_state_to_live_tables(target, buyer_db)
+
+        if str(target.table_id or "") == str(table.table_id):
+            target_participant = target.to_participant()
+            await self._attach_harem_owner_payload(target_participant, buyer_db)
+            target_participant["harem_price"] = target.harem_price
+            await self.broadcast(
+                table.table_id,
+                self._make_update_user_payload(target_participant),
+            )
 
         log.info(
-            f"HAREM: {player.username} → {target.username} price={price} new={target.harem_price}"
+            "HAREM: %s → %s (db=%s) price=%s new=%s from_top=%s",
+            player.username,
+            target.username,
+            target_db_id,
+            price,
+            target.harem_price,
+            str(target.table_id or "") != str(table.table_id),
         )
 
         if old_oid and old_oid != buyer_db:
