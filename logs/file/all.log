@@ -824,3 +824,11 @@ Traceback (most recent call last):
 2026-05-20 05:54:44 | ERROR | dispatcher.py:225 | Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
 2026-05-20 05:54:44 | WARNING | dispatcher.py:227 | Sleep for 7.565950 seconds and try again... (tryings = 6, bot id = 8510901014)
 2026-05-20 05:55:22 | INFO | dispatcher.py:239 | Connection established (tryings = 7, bot id = 8510901014)
+2026-05-20 06:45:53 | INFO | dispatcher.py:413 | Polling stopped for bot @AnonimChatAppBot id=8510901014 - 'AnonimChatAppBot'
+2026-05-20 06:45:53 | INFO | dispatcher.py:624 | Polling stopped
+2026-05-20 06:46:06 | INFO | _client.py:1740 | HTTP Request: GET https://yt-search-and-download-mp3.p.rapidapi.com/search?q=music&limit=48 "HTTP/1.1 429 Too Many Requests"
+2026-05-20 06:46:07 | INFO | _client.py:1740 | HTTP Request: GET https://yt-search-and-download-mp3.p.rapidapi.com/search?query=music&limit=48 "HTTP/1.1 429 Too Many Requests"
+2026-05-20 06:46:08 | INFO | _client.py:1740 | HTTP Request: GET https://yt-search-and-download-mp3.p.rapidapi.com/search?q=music "HTTP/1.1 429 Too Many Requests"
+2026-05-20 06:46:09 | INFO | _client.py:1740 | HTTP Request: GET https://yt-search-and-download-mp3.p.rapidapi.com/ytsearch?q=music&limit=48 "HTTP/1.1 404 Not Found"
+2026-05-20 06:46:23 | INFO | dispatcher.py:596 | Start polling
+2026-05-20 06:46:23 | INFO | dispatcher.py:378 | Run polling for bot @AnonimChatAppBot id=8510901014 - 'AnonimChatAppBot'
