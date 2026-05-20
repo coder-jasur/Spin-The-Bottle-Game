@@ -12,7 +12,7 @@ import json
 import logging
 import random
 import time
-from collections import deque
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Deque, Dict, List, Optional, Tuple
@@ -141,6 +141,10 @@ PLAIN_WS_IDLE_IGNORE_TYPES: frozenset[str] = frozenset(
 )
 # `spinbottle` logger uchun INFO darajasini yoqamiz va uvicorn handler'iga
 # propagate qilamiz (agar root da handler bo'lsa). Aks holda StreamHandler qo'shamiz.
+# Sovg'a spam: bitta o'yinchi stolni bloklamasligi uchun
+GIFT_BURST_MAX = 14
+GIFT_BURST_WINDOW_SEC = 2.0
+
 log.setLevel(logging.INFO)
 if not log.handlers and not logging.getLogger().handlers:
     _h = logging.StreamHandler()
@@ -167,6 +171,8 @@ class GameManager:
         self._queue_waiting: Dict[str, str] = {}
         # Navbatda turgan Player (stol.players da emas)
         self._queue_players: Dict[str, Player] = {}
+        # user_id → so'nggi sovg'a vaqtlari (monotonic)
+        self._gift_burst: Dict[str, Deque[float]] = defaultdict(deque)
 
     def _find_duplicate_plain_player(self, table: Table, player: Player) -> Optional[Player]:
         """Bir xil akkaunt (db_id) shu stolda allaqachon onlayn bo'lsa — eski sessiya."""
@@ -961,7 +967,7 @@ class GameManager:
                 table_id,
                 {"type": "game_leave", "user": player.to_short(), "ts": self._ts()},
             )
-            await self._check_and_broadcast_turn(table)
+            await self._recover_table_after_participant_left(table)
             await self._promote_from_queue(table_id)
 
         if table.player_count() == 0 and not self._table_queues.get(table_id):
@@ -1193,20 +1199,56 @@ class GameManager:
     # ════════════════════════════════════════════════════════════════════════
     # BROADCAST / SEND
     # ════════════════════════════════════════════════════════════════════════
+    def _allow_gift_burst(self, player_id: str) -> bool:
+        """Juda ko'p sovg'a ketma-ket kelganda event loopni bo'g'maslik."""
+        now = time.monotonic()
+        dq = self._gift_burst[player_id]
+        while dq and now - dq[0] > GIFT_BURST_WINDOW_SEC:
+            dq.popleft()
+        if len(dq) >= GIFT_BURST_MAX:
+            return False
+        dq.append(now)
+        return True
+
+    async def _recover_table_after_participant_left(self, table: Table) -> None:
+        """Spinner/target ketganda yoki raund yarim qolganda stolni WAIT ga qaytaradi."""
+        spin_id = table.current_spinner
+        targ_id = table.current_target
+        missing = (spin_id and spin_id not in table.players) or (
+            targ_id and targ_id not in table.players
+        )
+        if table.state in (STATE_SPINNING, STATE_OFFER, STATE_SELECT) and missing:
+            table.reset_turn()
+            table.cancel_offer_timeout_task()
+            table.cancel_auto_spin_task()
+            if table._spin_task and not table._spin_task.done():
+                table._spin_task.cancel()
+                table._spin_task = None
+        if table.state == STATE_WAIT and not getattr(table, "round_closing", False):
+            await self._check_and_broadcast_turn(table)
+
     async def broadcast(self, table_id: str, msg: dict, exclude_id: str = None):
         table = self.tables.get(table_id)
         if not table:
             return
+        msg_type = msg.get("type")
+        tasks: list = []
         for uid, player in list(table.players.items()):
             if uid == exclude_id:
                 continue
-            payload = copy.deepcopy(msg)
-            if msg.get("type") == "game_join" and getattr(player, "plain_ws", False):
+            if msg_type == "game_join" and getattr(player, "plain_ws", False):
                 payload = self._game_join_to_player_joined(msg, table)
-            elif msg.get("type") == "game_leave" and getattr(player, "plain_ws", False):
+            elif msg_type == "game_leave" and getattr(player, "plain_ws", False):
                 payload = self._game_leave_to_player_left(msg, table)
+            else:
+                payload = msg.copy()
             player.stamp_out_packet(payload)
-            await self._deliver(player, payload)
+            tasks.append(self._deliver(player, payload))
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for r in results:
+                if isinstance(r, Exception):
+                    log.debug("broadcast deliver: %s", r)
 
     async def send_to(self, player: Player, msg: dict):
         payload = copy.deepcopy(msg)
@@ -2483,12 +2525,15 @@ class GameManager:
             if spinner:
                 await self._advance_bottle(table, spinner)
             else:
-                # Spinner stoldan ketgan — shunday ham keyingi navbatga o'tamiz
                 log.info(
                     "TURN-TIMEOUT: spinner %s topilmadi (ketgan). Navbatni qayta tekshiramiz (stol=%s)",
                     spinner_id,
                     table.table_id,
                 )
+                if table.state in (STATE_OFFER, STATE_SPINNING, STATE_SELECT):
+                    table.reset_turn()
+                    table.cancel_offer_timeout_task()
+                    table.cancel_auto_spin_task()
                 await self._check_and_broadcast_turn(table)
 
     def _partner_for_offer_turn(
@@ -2861,6 +2906,16 @@ class GameManager:
     async def _handle_game_gift(self, table: Table, player: Player, data: dict):
         if await self._reject_if_dynamite(player):
             return
+        if not self._allow_gift_burst(str(player.id)):
+            await self.send_to(
+                player,
+                {
+                    "type": "error",
+                    "msg": "Juda tez yuboryapsiz, biroz kuting",
+                    "ts": self._ts(),
+                },
+            )
+            return
 
         gift_raw = data.get("gift_type", "")
         gt_raw = str(gift_raw or "").strip().lower()
@@ -2879,8 +2934,9 @@ class GameManager:
             return
 
         is_love = self._is_gift_love(gt, gt_raw)
-        if is_love:
-            await self._sync_gift_love_from_db(player)
+        if is_love and not self._gift_love_unlimited(player):
+            if GIFT_LOVE_ITEM_ID not in player.items:
+                await self._sync_gift_love_from_db(player)
         if is_love and not self._gift_love_unlimited(player) and self._gift_love_stock(player) < 1:
             await self.send_to(
                 player,
@@ -2894,7 +2950,7 @@ class GameManager:
 
         if is_love:
             self._consume_gift_love(player)
-            await self._persist_gift_love_stock(player)
+            asyncio.create_task(self._persist_gift_love_stock(player))
 
         if not self._is_bomb_gift(gt):
             self._clear_dynamite(receiver)
@@ -2902,22 +2958,31 @@ class GameManager:
         receiver.kisses += 1
         # g_love («Коктейль Любви»): qabul qiluvchiga +1 ❤️
         if is_love:
-            await self._credit_wallet_hearts(
-                receiver,
-                1,
-                "gift_love_bonus",
-                description=f"from:{player.id}",
+            asyncio.create_task(
+                self._credit_wallet_hearts(
+                    receiver,
+                    1,
+                    "gift_love_bonus",
+                    description=f"from:{player.id}",
+                )
             )
-            await self._push_items_sync(player)
-            await self._push_wallet_sync(player)
+            asyncio.create_task(self._push_items_sync(player))
         # Air kiss sovg'asi — receiverga umumiy kiss (reyting) sifatida ham qo'shiladi.
-        # Front assetlari turlicha nomlanishi mumkin: air_kiss, air_kiss_premium, g_air_kiss1_v2, ...
         if "air_kiss" in gt:
             receiver.total_kisses = int(getattr(receiver, "total_kisses", 0) or 0) + 1
-            await self._save_kiss_stats(sender_id=None, receiver_id=receiver.db_id)
-            await self._check_achievements(
-                receiver, "total_kisses", int(receiver.total_kisses or 0)
-            )
+            if receiver.db_id:
+                asyncio.create_task(
+                    self._save_kiss_stats(
+                        sender_id=None, receiver_id=receiver.db_id
+                    )
+                )
+                asyncio.create_task(
+                    self._check_achievements(
+                        receiver,
+                        "total_kisses",
+                        int(receiver.total_kisses or 0),
+                    )
+                )
         stick_random = random.randint(0, 1_000_000_000)
 
         if is_love:
@@ -2954,7 +3019,7 @@ class GameManager:
             },
         )
 
-        await self._bump_dj_gift_to_active_dj(table, receiver)
+        asyncio.create_task(self._bump_dj_gift_to_active_dj(table, receiver))
         asyncio.create_task(self._save_gift_stats(player.db_id, receiver.db_id, price))
 
     async def _save_gift_stats(self, sender_id, receiver_id, price: int):
@@ -3681,7 +3746,9 @@ class GameManager:
             return
         receiver.dj_score = int(getattr(receiver, "dj_score", 0) or 0) + 1
         asyncio.create_task(self._save_dj_stat(receiver.db_id, 1))
-        await self._check_achievements(receiver, "dj_score", receiver.dj_score)
+        asyncio.create_task(
+            self._check_achievements(receiver, "dj_score", receiver.dj_score)
+        )
 
     def _schedule_table_music_clear(self, table: Table, payload: dict) -> None:
         old = table._music_clear_task

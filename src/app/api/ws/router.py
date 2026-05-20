@@ -182,19 +182,36 @@ async def game_websocket(ws: WebSocket):
             if not raw:
                 continue
 
-            rate_key = f"wsmsg:{user_id or ip}"
-            if not await check_rate(
-                rate_key, ws_msg_limit, 10, redis_url=redis_url
-            ):
-                log.warning("WS rate limit: %s", rate_key)
-                await ws.close(code=1008, reason="too_many_messages")
-                break
-
             packet = parse_packet(raw)
             if not packet:
                 continue
 
             ptype = packet.get("type", "unknown")
+            rate_uid = user_id or ip
+            # Sovg'a/ichimlik spamida butun WS uzilmasin — alohida yumshoq limit
+            _GAME_BURST_TYPES = frozenset(
+                {
+                    "game_gift",
+                    "send_gift",
+                    "game_drink",
+                    "game_random",
+                    "random_gift",
+                    "game_gesture",
+                }
+            )
+            if ptype in _GAME_BURST_TYPES:
+                if not await check_rate(
+                    f"wsact:{rate_uid}", 120, 10, redis_url=redis_url
+                ):
+                    continue
+            else:
+                rate_key = f"wsmsg:{rate_uid}"
+                if not await check_rate(
+                    rate_key, ws_msg_limit, 10, redis_url=redis_url
+                ):
+                    log.warning("WS rate limit: %s", rate_key)
+                    await ws.close(code=1008, reason="too_many_messages")
+                    break
 
             # ── LOGIN (faqat query-token yo'lidan kelmaganda) ───────────────
             if ptype == "login":

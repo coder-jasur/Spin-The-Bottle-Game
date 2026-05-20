@@ -809,3 +809,18 @@ Traceback (most recent call last):
 2026-05-20 05:19:56 | INFO | _client.py:1740 | HTTP Request: GET https://yt-search-and-download-mp3.p.rapidapi.com/ytsearch?q=music&limit=48 "HTTP/1.1 404 Not Found"
 2026-05-20 05:20:10 | INFO | dispatcher.py:596 | Start polling
 2026-05-20 05:20:10 | INFO | dispatcher.py:378 | Run polling for bot @AnonimChatAppBot id=8510901014 - 'AnonimChatAppBot'
+2026-05-20 05:54:00 | ERROR | dispatcher.py:225 | Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2026-05-20 05:54:00 | WARNING | dispatcher.py:227 | Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8510901014)
+2026-05-20 05:54:05 | ERROR | dispatcher.py:225 | Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2026-05-20 05:54:05 | WARNING | dispatcher.py:227 | Sleep for 1.301954 seconds and try again... (tryings = 1, bot id = 8510901014)
+2026-05-20 05:54:11 | ERROR | dispatcher.py:225 | Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2026-05-20 05:54:11 | WARNING | dispatcher.py:227 | Sleep for 1.995669 seconds and try again... (tryings = 2, bot id = 8510901014)
+2026-05-20 05:54:17 | ERROR | dispatcher.py:225 | Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2026-05-20 05:54:17 | WARNING | dispatcher.py:227 | Sleep for 2.728794 seconds and try again... (tryings = 3, bot id = 8510901014)
+2026-05-20 05:54:26 | ERROR | dispatcher.py:225 | Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2026-05-20 05:54:26 | WARNING | dispatcher.py:227 | Sleep for 3.911373 seconds and try again... (tryings = 4, bot id = 8510901014)
+2026-05-20 05:54:33 | ERROR | dispatcher.py:225 | Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2026-05-20 05:54:33 | WARNING | dispatcher.py:227 | Sleep for 5.379848 seconds and try again... (tryings = 5, bot id = 8510901014)
+2026-05-20 05:54:44 | ERROR | dispatcher.py:225 | Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2026-05-20 05:54:44 | WARNING | dispatcher.py:227 | Sleep for 7.565950 seconds and try again... (tryings = 6, bot id = 8510901014)
+2026-05-20 05:55:22 | INFO | dispatcher.py:239 | Connection established (tryings = 7, bot id = 8510901014)
