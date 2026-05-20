@@ -5015,8 +5015,9 @@ class GameManager:
         ("total_kisses_rank", "kisses"),
         ("dj_score_rank", "dj"),
         ("gestures_rank", "emotion"),
+        # Klient: 1 yurak = harem_price, 2 yurak = expense (sovg'a)
         ("price_rank", "harem_price"),
-        ("harem_price_rank", "harem_courts_received"),
+        ("harem_price_rank", "expense"),
     )
     TOP_RANK_MAX = 10
 
@@ -6304,12 +6305,12 @@ class GameManager:
     _LEGACY_TOPS_COL_MAP = {
         "total_kisses": "kisses",
         "dj_score": "dj",
-        # «Самые влиятельные» — profil «2 yurak» = users.harem_price (joriy narx)
-        "harem_price": "harem_price",
+        # TOP tab `price` — profil «1 yurak» = users.harem_price
+        "price": "harem_price",
+        # TOP tab `harem_price` — profil «2 yurak» = users.expense
+        "harem_price": "expense",
         # «Emotsiyalar» reytingi — faqat users.emotion (game_gesture +1)
         "gestures": "emotion",
-        # «Самые дорогие» — profil «1 yurak» = users.expense (sovg'a xarajati)
-        "price": "expense",
         # Eski (UserStats) atashlar — backward compatibility uchun
         "kisses": "kisses",
         "dj": "dj",
