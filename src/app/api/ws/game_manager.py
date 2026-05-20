@@ -298,15 +298,99 @@ class GameManager:
             return f"Bu stoldan haydalgansiz. {m} daqiqadan keyin qayta kirishingiz mumkin."
         return f"Bu stoldan haydalgansiz. {remain} soniyadan keyin qayta kirishingiz mumkin."
 
-    async def _increment_harem_courts_received(self, target: Player) -> int:
-        """Target necha marta uxajorlik olgan — reyting «2 yurak»."""
-        new_val = int(getattr(target, "harem_courts_received", 0) or 0) + 1
-        target.harem_courts_received = new_val
-        if target.db_id:
+    def _harem_owner_paid_fallback(self, target: Player) -> int:
+        """Eski yozuvlar: to'langan summa saqlanmagan bo'lsa taxmin."""
+        paid = int(getattr(target, "harem_owner_paid_price", 0) or 0)
+        if paid > 0:
+            return paid
+        hp = max(1, int(getattr(target, "harem_price", 1) or 1))
+        return max(1, hp - 1)
+
+    async def _adjust_harem_influence_score(
+        self,
+        target_db_id: int,
+        delta: int,
+        live: Optional[Player] = None,
+    ) -> int:
+        """«2 yurak» reytingi: uxajor to'lovlari yig'indisi (+ qo'shiladi, - ayiriladi)."""
+        if not target_db_id or not delta:
+            cur = int(getattr(live, "harem_courts_received", 0) or 0) if live else 0
+            return max(0, cur)
+        cur = 0
+        if live and int(live.db_id or 0) == int(target_db_id):
+            cur = int(getattr(live, "harem_courts_received", 0) or 0)
+        else:
+            try:
+                async with self._db() as repo:
+                    db_u = await repo.get_user_with_wallet(int(target_db_id))
+                if db_u:
+                    cur = int(getattr(db_u, "harem_courts_received", 0) or 0)
+            except Exception as e:
+                log.debug("_adjust_harem_influence_score load: %s", e)
+        new_val = max(0, cur + int(delta))
+        if live and int(live.db_id or 0) == int(target_db_id):
+            live.harem_courts_received = new_val
+        if target_db_id:
             await self._db_update_user(
-                int(target.db_id), harem_courts_received=new_val
+                int(target_db_id), harem_courts_received=new_val
             )
         return new_val
+
+    async def _apply_harem_court_to_target(
+        self, target: Player, buyer_db: int, paid: int
+    ) -> None:
+        """Nishonga uxajorlik: eski hissani ayir, yangisini qo'sh."""
+        paid = max(1, int(paid or 1))
+        target_db = int(target.db_id or 0)
+        if not target_db:
+            return
+
+        prev_owner = int(target.harem_owner_id or 0)
+        if prev_owner and prev_owner != int(buyer_db):
+            prev_paid = self._harem_owner_paid_fallback(target)
+            await self._adjust_harem_influence_score(
+                target_db, -prev_paid, target
+            )
+
+        target.harem_owner_id = int(buyer_db)
+        target.harem_owner_paid_price = paid
+        target.harem_price = max(1, int(target.harem_price or 1)) + 1
+        await self._adjust_harem_influence_score(target_db, paid, target)
+
+        await self._db_update_user(
+            target_db,
+            harem_owner_id=int(buyer_db),
+            harem_owner_paid_price=paid,
+            harem_price=target.harem_price,
+        )
+
+    async def _revoke_harem_court_from_target(
+        self,
+        target_db_id: int,
+        paid: int,
+        live: Optional[Player] = None,
+    ) -> None:
+        """Uxajor ketganda: 2-yurak yig'indisidan to'langan summa ayiriladi."""
+        if not target_db_id:
+            return
+        paid_eff = max(1, int(paid or 0))
+        if paid_eff <= 0:
+            if live:
+                paid_eff = self._harem_owner_paid_fallback(live)
+            else:
+                try:
+                    async with self._db() as repo:
+                        db_u = await repo.get_user_with_wallet(int(target_db_id))
+                    if db_u:
+                        paid_eff = self._harem_owner_paid_fallback(
+                            Player.from_db(None, db_u)
+                        )
+                except Exception as e:
+                    log.debug("_revoke_harem_court_from_target load: %s", e)
+                    paid_eff = 1
+        await self._adjust_harem_influence_score(
+            int(target_db_id), -paid_eff, live
+        )
 
     def register_kick_reentry_ban(self, table_id: str, target: Player) -> None:
         """Haydashdan keyin shu stolga vaqtincha kirish taqiqi (KICK_REENTRY_BAN_MS)."""
@@ -3831,16 +3915,25 @@ class GameManager:
         if not pursuer_db_id:
             return
         keep_id = int(new_target_db_id or 0)
-        cleared_ids: list[int] = []
+        cleared_pairs: list[tuple[int, int]] = []
         try:
             async with self._db() as repo:
-                cleared_ids = await repo.clear_harem_owner_except(
+                cleared_pairs = await repo.clear_harem_owner_except(
                     pursuer_db_id, except_user_id=keep_id
                 )
         except Exception as e:
             log.warning("_release_prior_harem_targets DB: %s", e)
 
-        cleared_set = set(cleared_ids)
+        handled_ids: set[int] = set()
+
+        for tid, paid in cleared_pairs:
+            live = self._find_player_by_db_id(int(tid))
+            await self._revoke_harem_court_from_target(int(tid), paid, live)
+            if live:
+                live.harem_owner_id = 0
+                live.harem_owner_paid_price = 0
+            handled_ids.add(int(tid))
+
         for table in self.tables.values():
             for pl in table.players.values():
                 db_id = int(pl.db_id or 0)
@@ -3848,9 +3941,19 @@ class GameManager:
                     continue
                 if int(pl.harem_owner_id or 0) != pursuer_db_id:
                     continue
+                if db_id and db_id not in handled_ids:
+                    await self._revoke_harem_court_from_target(
+                        db_id,
+                        int(getattr(pl, "harem_owner_paid_price", 0) or 0),
+                        pl,
+                    )
+                    await self._db_update_user(
+                        db_id, harem_owner_id=0, harem_owner_paid_price=0
+                    )
                 pl.harem_owner_id = 0
-                if db_id and db_id not in cleared_set:
-                    await self._db_update_user(db_id, harem_owner_id=0)
+                pl.harem_owner_paid_price = 0
+                if db_id:
+                    handled_ids.add(db_id)
                 part = pl.to_participant()
                 part["harem_owner_id"] = 0
                 await self._attach_harem_owner_payload(part, 0)
@@ -3899,6 +4002,9 @@ class GameManager:
             return
         live.harem_owner_id = int(target.harem_owner_id or 0)
         live.harem_price = int(target.harem_price or 1)
+        live.harem_owner_paid_price = int(
+            getattr(target, "harem_owner_paid_price", 0) or 0
+        )
         live.harem_courts_received = int(
             getattr(target, "harem_courts_received", 0) or 0
         )
@@ -3990,17 +4096,7 @@ class GameManager:
         await self._release_prior_harem_targets(
             buyer_db, int(target.db_id or 0)
         )
-
-        target.harem_owner_id = buyer_db
-        target.harem_price = int(target.harem_price) + 1
-        await self._increment_harem_courts_received(target)
-
-        if target.db_id:
-            await self._db_update_user(
-                target.db_id,
-                harem_owner_id=target.harem_owner_id,
-                harem_price=target.harem_price,
-            )
+        await self._apply_harem_court_to_target(target, buyer_db, price)
 
         hp = {
             "type": "harem_purchase",
@@ -4238,10 +4334,21 @@ class GameManager:
         target_db_id: Optional[int],
     ) -> None:
         """Target foydalanuvchining uxajorini (harem_owner_id) bo'shatadi."""
+        tid = int(target_db_id or 0) or (
+            int(live_target.db_id or 0) if live_target else 0
+        )
+        if tid:
+            paid = 0
+            if live_target:
+                paid = int(getattr(live_target, "harem_owner_paid_price", 0) or 0)
+            await self._revoke_harem_court_from_target(tid, paid, live_target)
         if live_target:
             live_target.harem_owner_id = 0
+            live_target.harem_owner_paid_price = 0
         if target_db_id:
-            await self._db_update_user(int(target_db_id), harem_owner_id=0)
+            await self._db_update_user(
+                int(target_db_id), harem_owner_id=0, harem_owner_paid_price=0
+            )
         if live_target and live_target.table_id:
             part = live_target.to_participant()
             part["harem_owner_id"] = 0
@@ -4471,22 +4578,18 @@ class GameManager:
                     viewer_db, int(target_db_id or 0)
                 )
 
-                new_owner = viewer_db
-                new_price = price + 1
-                if live_target:
-                    live_target.harem_owner_id = new_owner
-                    live_target.harem_price = new_price
-                    await self._increment_harem_courts_received(live_target)
-                elif target_for_extra:
-                    await self._increment_harem_courts_received(target_for_extra)
-                if target_db_id:
-                    await self._db_update_user(
-                        target_db_id,
-                        harem_owner_id=new_owner,
-                        harem_price=new_price,
+                court_pl = live_target or target_for_extra
+                if court_pl:
+                    if target_db_id and not court_pl.db_id:
+                        court_pl.db_id = int(target_db_id)
+                    await self._apply_harem_court_to_target(
+                        court_pl, viewer_db, price
                     )
-                cur_owner = new_owner
-                cur_price = new_price
+                    cur_owner = viewer_db
+                    cur_price = int(court_pl.harem_price or 1)
+                else:
+                    cur_owner = viewer_db
+                    cur_price = price + 1
                 log.info(
                     "LIKE: viewer=%s → target=%s price=%d new=%d",
                     player.id,
@@ -4505,9 +4608,12 @@ class GameManager:
                 # Stol uchastniklariga ham eski-uy uchun update_user yuboramiz
                 if live_target and live_target.table_id:
                     part = live_target.to_participant()
-                    part["harem_owner_id"] = new_owner
-                    part["harem_price"] = new_price
-                    await self._attach_harem_owner_payload(part, new_owner)
+                    part["harem_owner_id"] = cur_owner
+                    part["harem_price"] = cur_price
+                    part["harem_courts_received"] = int(
+                        getattr(live_target, "harem_courts_received", 0) or 0
+                    )
+                    await self._attach_harem_owner_payload(part, cur_owner)
                     await self.broadcast(
                         live_target.table_id,
                         self._make_update_user_payload(part),
@@ -5015,9 +5121,9 @@ class GameManager:
         ("total_kisses_rank", "kisses"),
         ("dj_score_rank", "dj"),
         ("gestures_rank", "emotion"),
-        # Klient: 1 yurak = harem_price, 2 yurak = expense (sovg'a)
-        ("price_rank", "harem_price"),
-        ("harem_price_rank", "expense"),
+        # Klient: 1 yurak = expense, 2 yurak = harem_courts_received (uxajor yig'indisi)
+        ("price_rank", "expense"),
+        ("harem_price_rank", "harem_courts_received"),
     )
     TOP_RANK_MAX = 10
 
@@ -6143,6 +6249,9 @@ class GameManager:
                     p.harem_courts_received = int(
                         getattr(db_u, "harem_courts_received", 0) or 0
                     )
+                    p.harem_owner_paid_price = int(
+                        getattr(db_u, "harem_owner_paid_price", 0) or 0
+                    )
                     # Profil zodiak: klient `birthday_ts` dan hisoblaydi — DB bilan sinxron
                     p.birthday_ts = parse_birth_date_ms(
                         getattr(db_u, "birth_date", None)
@@ -6305,10 +6414,10 @@ class GameManager:
     _LEGACY_TOPS_COL_MAP = {
         "total_kisses": "kisses",
         "dj_score": "dj",
-        # TOP tab `price` — profil «1 yurak» = users.harem_price
-        "price": "harem_price",
-        # TOP tab `harem_price` — profil «2 yurak» = users.expense
-        "harem_price": "expense",
+        # TOP tab `price` — profil «1 yurak» = users.expense
+        "price": "expense",
+        # TOP tab `harem_price` — profil «2 yurak» = uxajor to'lovlari yig'indisi
+        "harem_price": "harem_courts_received",
         # «Emotsiyalar» reytingi — faqat users.emotion (game_gesture +1)
         "gestures": "emotion",
         # Eski (UserStats) atashlar — backward compatibility uchun

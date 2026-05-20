@@ -29,6 +29,10 @@ _SCHEMA_PATCHES: tuple[str, ...] = (
     WHERE harem_courts_received = 0 AND harem_price > 1
     """,
     """
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS harem_owner_paid_price INTEGER NOT NULL DEFAULT 0
+    """,
+    """
     CREATE TABLE IF NOT EXISTS user_music_folders (
         user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         folder TEXT NOT NULL,

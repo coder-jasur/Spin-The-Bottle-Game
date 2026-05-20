@@ -161,6 +161,7 @@ class Player:
         self.harem_owner_id: int = 0
         self.harem_price: int    = 1
         self.harem_courts_received: int = 0
+        self.harem_owner_paid_price: int = 0
         self.compliments_sent: int = 0
         # Bank komplimentlari uchun sikl (0..COMPLIMENTS_TO_REWARD); yutuq — umumiy
         self.compliments_lifetime: int = 0
@@ -383,6 +384,9 @@ class Player:
         p.harem_courts_received = int(
             getattr(db_user, "harem_courts_received", 0) or 0
         )
+        p.harem_owner_paid_price = int(
+            getattr(db_user, "harem_owner_paid_price", 0) or 0
+        )
         p.friends_privacy = getattr(db_user, "friends_privacy", None) or "everyone"
         p.invited_guests = int(getattr(db_user, "invited_guests", 0) or 0)
         p.kickout_streak_count = int(getattr(db_user, "kickout_streak_count", 0) or 0)
@@ -502,6 +506,7 @@ class Player:
             "gestures":    self.emotion,
             "price":       self.expense,
             "harem_price": self.harem_price,
+            "harem_courts_received": self.harem_courts_received,
             "league":      league_tier_from_total_kisses(self.total_kisses),
             "harem_owner_id": self.harem_owner_id,
             "harem_owner": None, # Manager tomonidan to'ldiriladi

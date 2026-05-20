@@ -76,10 +76,10 @@ class GameRepository:
 
     async def clear_harem_owner_except(
         self, owner_db_id: int, except_user_id: int = 0
-    ) -> list[int]:
-        """owner_db_id ni uxajor qilgan barcha foydalanuvchilardan olib tashlaydi.
+    ) -> list[tuple[int, int]]:
+        """owner_db_id uxajori bo'lgan foydalanuvchilarni bo'shatadi.
 
-        except_user_id berilsa, shu foydalanuvchi saqlanadi (yangi nishon).
+        (target_user_id, harem_owner_paid_price) ro'yxati qaytariladi.
         """
         if not owner_db_id:
             return []
@@ -89,12 +89,12 @@ class GameRepository:
         stmt = (
             update(User)
             .where(*conds)
-            .values(harem_owner_id=0)
-            .returning(User.id)
+            .values(harem_owner_id=0, harem_owner_paid_price=0)
+            .returning(User.id, User.harem_owner_paid_price)
         )
         result = await self.session.execute(stmt)
         await self.session.commit()
-        return [int(row[0]) for row in result.all()]
+        return [(int(row[0]), int(row[1] or 0)) for row in result.all()]
 
     async def mark_bonus_claimed(self, user_id: int) -> None:
         """Foydalanuvchi bugun bonus olganini belgilaydi."""
