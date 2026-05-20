@@ -376,7 +376,10 @@ class GameManager:
         paid: int,
         live: Optional[Player] = None,
     ) -> None:
-        """Uxajor ketganda: 2-yurak yig'indisidan to'langan summa ayiriladi."""
+        """Boshqa odamga uxajovat qilganda: 2-yurak yig'indisidan to'langan summa ayiriladi.
+
+        Profil «otkaz» yoki admirer o'zi ketganda chaqirilmaydi — faqat yangi nishon.
+        """
         if not target_db_id:
             return
         paid_eff = max(1, int(paid or 0))
@@ -4186,6 +4189,9 @@ class GameManager:
             target_participant = target.to_participant()
             await self._attach_harem_owner_payload(target_participant, buyer_db)
             target_participant["harem_price"] = target.harem_price
+            target_participant["harem_courts_received"] = int(
+                getattr(target, "harem_courts_received", 0) or 0
+            )
             await self.broadcast(
                 table.table_id,
                 self._make_update_user_payload(target_participant),
@@ -4400,15 +4406,11 @@ class GameManager:
         live_target: Optional[Player],
         target_db_id: Optional[int],
     ) -> None:
-        """Target foydalanuvchining uxajorini (harem_owner_id) bo'shatadi."""
-        tid = int(target_db_id or 0) or (
-            int(live_target.db_id or 0) if live_target else 0
-        )
-        if tid:
-            paid = 0
-            if live_target:
-                paid = int(getattr(live_target, "harem_owner_paid_price", 0) or 0)
-            await self._revoke_harem_court_from_target(tid, paid, live_target)
+        """Target foydalanuvchining uxajorini (harem_owner_id) bo'shatadi.
+
+        `harem_courts_received` (2 yurak) o'zgarmaydi — faqat boshqa nishonga
+        uxajovat qilganda `_revoke_harem_court_from_target` orqali kamayadi.
+        """
         if live_target:
             live_target.harem_owner_id = 0
             live_target.harem_owner_paid_price = 0
@@ -4419,6 +4421,9 @@ class GameManager:
         if live_target and live_target.table_id:
             part = live_target.to_participant()
             part["harem_owner_id"] = 0
+            part["harem_courts_received"] = int(
+                getattr(live_target, "harem_courts_received", 0) or 0
+            )
             await self._attach_harem_owner_payload(part, 0)
             await self.broadcast(
                 live_target.table_id,
@@ -4452,6 +4457,9 @@ class GameManager:
         if live_target and live_target.table_id:
             part = live_target.to_participant()
             part["harem_price"] = new_price
+            part["harem_courts_received"] = int(
+                getattr(live_target, "harem_courts_received", 0) or 0
+            )
             await self._attach_harem_owner_payload(part, 0)
             await self.broadcast(
                 live_target.table_id,
