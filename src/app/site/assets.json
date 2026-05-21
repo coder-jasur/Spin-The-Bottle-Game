@@ -9944,7 +9944,7 @@
     ],
     "__store_v6": [
       {
-        "gestures_s": 60,
+        "gestures_s": 5,
         "id": "dynamite"
       },
       {
@@ -10977,7 +10977,7 @@
     ],
     "__store_v7": [
       {
-        "gestures_s": 60,
+        "gestures_s": 5,
         "id": "dynamite"
       },
       {

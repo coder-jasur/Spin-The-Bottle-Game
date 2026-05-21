@@ -995,7 +995,7 @@ class GameRepository:
         for i in range(n + 1, GLOBAL_ROOM_SLOTS + 1):
             self.session.add(
                 TableRoom(
-                    name=f"G{i}",
+                    name=f"GLOBAL #{i}",
                     country_code="ALL",
                     is_vip=False,
                 )

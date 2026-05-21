@@ -50,8 +50,8 @@ GIFT_TYPES = ['air_kiss', 'air_kiss_premium', 'astronaut', 'bear1', 'bear4', 'be
 GIFT_LOVE_ITEM_ID = "g_love"
 GIFT_LOVE_UNLIMITED_MIN = 999
 
-# Dynamite (ichimlik) — qurbon faqat chat (SMS) va musiqa qo'ya olmaydi; chat yozuvlari o'chadi.
-# Butilka aylantirish, sovg'a va boshqa o'yin harakatlari ruxsat.
+# Dynamite (ichimlik) — qurbon: chat/SMS yozmaydi, musiqa qo'ymaydi; chat yozuvlari o'chadi.
+# Boshqa harakatlar (o'pish, sovg'a, ichimlik, shapka, butilka va h.k.) ruxsat.
 DYNAMITE_DRINK_TYPE = "dynamite"
 BOMB_GIFT_TYPES: frozenset[str] = frozenset({"bomb", "holigrenade"})
 
@@ -145,7 +145,7 @@ STATE_SELECT   = "wait_select"
 
 # ── Stol ──────────────────────────────────────────────────────────────────
 MAX_SEATS = 12
-# Oxirgi ko'rinadigan stol shuncha o'yinchi (yoki navbat) bo'lsa — keyingi stol menyuda ochiladi
+# Ko'rinadigan stollar yig'indisi ~50% to'lganda keyingi stol ochiladi (room_policy)
 TABLE_BUSY_OPEN_NEXT = MAX_SEATS
 
 # HTML5 bottle (plain_ws): har qanday xabardan keyin faollik; shundan oshsa uziladi

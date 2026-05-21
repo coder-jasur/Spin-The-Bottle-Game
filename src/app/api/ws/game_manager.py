@@ -83,6 +83,7 @@ from src.app.core.room_policy import (
     is_global_country_code,
     normalize_country_code,
     player_may_join_room_row,
+    room_display_name,
     visible_room_prefix_len,
 )
 from src.app.database.repositories.game import GameRepository
@@ -1362,10 +1363,23 @@ class GameManager:
         bottle: str,
         men: int,
         women: int,
+        *,
+        room: object | None = None,
+        global_slot_fallback: int = 1,
     ) -> dict:
         seated = live.player_count() if live else 0
+        if room is not None and is_global_country_code(
+            getattr(room, "country_code", None)
+        ):
+            title = room_display_name(room, global_slot_fallback=global_slot_fallback)
+        elif room is not None:
+            nm = str(getattr(room, "name", "") or "").strip()
+            title = f"#{nm}" if nm else f"#{table_id}"
+        else:
+            title = f"#{table_id}"
         return {
             "game_id": table_id,
+            "table_title": title,
             "bottle": bottle,
             "men": men,
             "women": women,
@@ -1864,8 +1878,10 @@ class GameManager:
             db_fields["gender"] = player.gender
 
         if "locale" in data:
-            player.locale = str(data["locale"])
-            db_fields["language_code"] = player.locale
+            from src.app.core.language import apply_player_locale
+
+            if apply_player_locale(player, str(data["locale"])):
+                db_fields["language_code"] = player.locale
 
         if "status" in data:
             player.status = str(data["status"])[:100]
@@ -1926,6 +1942,11 @@ class GameManager:
             player.male = player.gender != "female"
             player.frame = str(getattr(u, "frame", None) or "")
             player.stone = str(getattr(u, "stone", None) or "")
+            from src.app.core.language import normalize_lang, to_game_locale
+
+            if getattr(u, "language_code", None):
+                player.language = normalize_lang(u.language_code)
+                player.locale = to_game_locale(player.language)
         except Exception as e:
             log.debug("sync_player_profile_from_db: %s", e)
 
@@ -1971,6 +1992,11 @@ class GameManager:
                 )
 
         await self._sync_player_profile_from_db(player)
+
+        if data.get("locale"):
+            from src.app.core.language import apply_player_locale
+
+            apply_player_locale(player, str(data["locale"]))
 
         needs_profile = bool(player.db_id) and int(getattr(player, "age", 0) or 0) <= 0
         if needs_profile:
@@ -2093,7 +2119,8 @@ class GameManager:
     async def _handle_get_rooms(self, player: Player, data: dict):
         """
         Foydalanuvchi mamlakatiga mos xonalar + global xonalar (ochiq ro'yxat).
-        DB da 150 ta mamlakat / 20 ta global; UI da bandlik bo'yicha qadam-baqadam ochiladi.
+        DB da 150 ta mamlakat / 20 ta global; UI da ko'rinadigan stollar yig'indisi
+        ~50% to'lganda keyingi stol ochiladi (3 stol → jami 18 kishi).
         """
         country = normalize_country_code(
             data.get("country", player.country or "UZBEKISTAN")
@@ -2132,8 +2159,10 @@ class GameManager:
 
             for r in country_vis:
                 tables_list.append(_entry(r, "country"))
-            for r in global_vis:
-                tables_list.append(_entry(r, "global"))
+            for gi, r in enumerate(global_vis, start=1):
+                entry = _entry(r, "global")
+                entry["name"] = room_display_name(r, global_slot_fallback=gi)
+                tables_list.append(entry)
         except Exception as e:
             log.error(f"get_rooms DB xatosi: {e}")
 
@@ -2172,7 +2201,7 @@ class GameManager:
         out: list[dict] = []
         try:
             c_vis, g_vis = await self._visible_country_and_global_rows(c)
-            for room in c_vis + g_vis:
+            for room in c_vis:
                 rid = str(room.id)
                 seated = self._room_seated_count(rid)
                 queued = len(self._table_queues.get(rid, ()))
@@ -2191,11 +2220,29 @@ class GameManager:
                         "is_vip": room.is_vip,
                         "min_level": room.min_level,
                         "country": room.country_code,
-                        "scope": (
-                            "global"
-                            if is_global_country_code(room.country_code)
-                            else "country"
-                        ),
+                        "scope": "country",
+                    }
+                )
+            for gi, room in enumerate(g_vis, start=1):
+                rid = str(room.id)
+                seated = self._room_seated_count(rid)
+                queued = len(self._table_queues.get(rid, ()))
+                cap = min(int(room.capacity or MAX_SEATS), MAX_SEATS)
+                out.append(
+                    {
+                        "id": rid,
+                        "room_id": room.id,
+                        "name": room_display_name(room, global_slot_fallback=gi),
+                        "currentPlayers": seated,
+                        "online": seated,
+                        "queueSize": queued,
+                        "maxPlayers": cap,
+                        "capacity": cap,
+                        "isFull": seated >= cap,
+                        "is_vip": room.is_vip,
+                        "min_level": room.min_level,
+                        "country": room.country_code,
+                        "scope": "global",
                     }
                 )
         except Exception as e:
@@ -2310,7 +2357,8 @@ class GameManager:
         """
         friends_rows: List[dict] = []
         fellows_rows: List[dict] = []
-        history_entries: list[dict] = []
+        history_country: list[dict] = []
+        history_global: list[dict] = []
         try:
             friend_ids = await self._friend_ids_for_games_lookup(player, data)
             seen_games: set[str] = set()
@@ -2354,16 +2402,26 @@ class GameManager:
                     live = self.tables.get(tid)
                     m, w = self._gender_counts_for_table(live)
                     bottle = live.bottle_type if live else DEFAULT_BOTTLE_TYPE
-                    history_entries.append(
-                        self._friend_game_history_row(tid, live, bottle, m, w)
+                    history_country.append(
+                        self._friend_game_history_row(
+                            tid, live, bottle, m, w, room=room
+                        )
                     )
-                for room in g_vis[:40]:
+                for gi, room in enumerate(g_vis[:40], start=1):
                     tid = str(room.id)
                     live = self.tables.get(tid)
                     m, w = self._gender_counts_for_table(live)
                     bottle = live.bottle_type if live else DEFAULT_BOTTLE_TYPE
-                    history_entries.append(
-                        self._friend_game_history_row(tid, live, bottle, m, w)
+                    history_global.append(
+                        self._friend_game_history_row(
+                            tid,
+                            live,
+                            bottle,
+                            m,
+                            w,
+                            room=room,
+                            global_slot_fallback=gi,
+                        )
                     )
             except asyncio.TimeoutError:
                 log.error(f"get_friend_games history timeout user={player.id}")
@@ -2379,8 +2437,8 @@ class GameManager:
                 "type": "friend_games",
                 "friends": friends_rows,
                 "fellows": fellows_rows,
-                "games_history": history_entries,
-                "games_history_global": [],
+                "games_history": history_country,
+                "games_history_global": history_global,
                 "ts": ts,
             },
         )
@@ -2389,7 +2447,7 @@ class GameManager:
             player.id,
             len(friends_rows),
             len(fellows_rows),
-            len(history_entries),
+            len(history_country) + len(history_global),
         )
 
     def _admin_floor_wallet(self, player: Player) -> None:
@@ -2888,8 +2946,6 @@ class GameManager:
     # ════════════════════════════════════════════════════════════════════════
     async def _handle_game_refuse(self, table: Table, player: Player, data: dict):
         """Legacy `game_refuse` paketini ham juftlik orqali yakunlaymiz."""
-        if await self._reject_if_dynamite(player):
-            return
         if table.state != STATE_OFFER:
             log.debug(
                 "refuse e'tiborsiz: state=%s uid=%s",
@@ -2919,8 +2975,6 @@ class GameManager:
     # GIFT
     # ════════════════════════════════════════════════════════════════════════
     async def _handle_game_gift(self, table: Table, player: Player, data: dict):
-        if await self._reject_if_dynamite(player):
-            return
         if not self._allow_gift_burst(str(player.id)):
             await self.send_to(
                 player,
@@ -3052,9 +3106,6 @@ class GameManager:
     # DRINK
     # ════════════════════════════════════════════════════════════════════════
     async def _handle_game_drink(self, table: Table, player: Player, data: dict):
-        if await self._reject_if_dynamite(player):
-            return
-
         drink_raw = str(data.get("drink_type", data.get("drink", ""))).strip()
         dt = self._normalize_item_type(drink_raw.lower())
         dt_drink = "love" if dt == GIFT_LOVE_ITEM_ID else dt
@@ -3100,6 +3151,10 @@ class GameManager:
         receiver.drink = dt
         receiver.drink_random = drink_rnd
         receiver.drink_count = int(receiver.drink_count or 0) + 1
+
+        if dt == DYNAMITE_DRINK_TYPE:
+            await self._wipe_dynamite_victim_chat(table, receiver)
+            await self._stop_table_music_if_player_is_sender(table, receiver)
 
         # Faqat `DRINK_IDS_RECEIVER_HEART_PLUS_1` dagi ichimlik: qabul qiluvchiga +1 gold
         if dt in DRINK_IDS_RECEIVER_HEART_PLUS_1:
@@ -3166,9 +3221,6 @@ class GameManager:
     # HAT
     # ════════════════════════════════════════════════════════════════════════
     async def _handle_game_hat(self, table: Table, player: Player, data: dict):
-        if await self._reject_if_dynamite(player):
-            return
-
         hat_type = data.get("hat_type", "")
         receiver_id = str(data.get("receiver_id", ""))
         price = int(data.get("price", HAT_PRICES.get(hat_type, 20)))
@@ -3418,7 +3470,7 @@ class GameManager:
         return text
 
     async def _handle_chat(self, table: Table, player: Player, data: dict):
-        if await self._reject_if_dynamite(player):
+        if await self._reject_if_dynamite(player, scope="chat"):
             return
 
         body = str(data.get("body") or data.get("message", "")).strip()[:500]
@@ -3472,7 +3524,7 @@ class GameManager:
 
     async def _handle_locked_message(self, table: Table, player: Player, data: dict):
         """Gizli (locked) xabar — VIP va do'st sharti yo'q; qabul qiluvchi shu stolda bo'lishi kerak."""
-        if await self._reject_if_dynamite(player):
+        if await self._reject_if_dynamite(player, scope="chat"):
             return
 
         body = str(data.get("body", "")).strip()[:500]
@@ -3866,7 +3918,7 @@ class GameManager:
         return payload
 
     async def _handle_game_music(self, table: Table, player: Player, data: dict):
-        if await self._reject_if_dynamite(player):
+        if await self._reject_if_dynamite(player, scope="music"):
             return
         log.info(f"MUSIC: {player.username} requested music: {data}")
         gold_cost = self._music_gold_cost(data)
@@ -3989,6 +4041,36 @@ class GameManager:
                 int(new_owner_db_id),
             )
         )
+
+    async def _deliver_harem_purchase_event(
+        self,
+        *,
+        purchase_table_id: str,
+        payload: dict,
+        buyer: Player,
+        displaced_db_id: int = 0,
+    ) -> None:
+        """harem_purchase: xarid stoli + boshqa stoldagi eski uxajor (chat va dialog)."""
+        table_key = str(purchase_table_id or "")
+        broadcast_payload = {
+            k: v
+            for k, v in payload.items()
+            if k not in ("gold", "goldReal")
+        }
+        await self.send_to(buyer, payload)
+        if table_key:
+            await self.broadcast(table_key, broadcast_payload)
+
+        oid = int(displaced_db_id or 0)
+        buyer_db = int(buyer.db_id or 0)
+        if not oid or oid == buyer_db:
+            return
+        displaced = self._find_player_by_db_id(oid)
+        if not displaced:
+            return
+        if table_key and str(displaced.table_id or "") == table_key:
+            return
+        await self.send_to(displaced, broadcast_payload)
 
     async def _release_prior_harem_targets(
         self, pursuer_db_id: int, new_target_db_id: int
@@ -4201,8 +4283,12 @@ class GameManager:
         if old_owner_short:
             hp["old_owner"] = old_owner_short
 
-        await self.send_to(player, hp)
-        await self.broadcast(table.table_id, hp)
+        await self._deliver_harem_purchase_event(
+            purchase_table_id=str(table.table_id),
+            payload=hp,
+            buyer=player,
+            displaced_db_id=old_oid if old_oid and old_oid != buyer_db else 0,
+        )
         await self._handle_get_wallet(player)
 
         await self._sync_harem_state_to_live_tables(target, buyer_db)
@@ -4760,6 +4846,39 @@ class GameManager:
                         int(target_db_id or 0),
                         viewer_db,
                     )
+                    if court_pl:
+                        old_owner_short = None
+                        old_p = self._find_player_by_db_id(displaced_owner)
+                        if old_p:
+                            old_owner_short = old_p.to_short()
+                        else:
+                            try:
+                                async with self._db() as repo:
+                                    db_old = await repo.get_user_with_wallet(
+                                        displaced_owner
+                                    )
+                                if db_old:
+                                    old_owner_short = Player.from_db(
+                                        None, db_old
+                                    ).to_short()
+                            except Exception as e:
+                                log.debug("like_user harem old_owner: %s", e)
+                        hp_like = {
+                            "type": "harem_purchase",
+                            "ts": self._ts(),
+                            "price": price,
+                            "price_rank": cur_price,
+                            "target": court_pl.to_short(),
+                            "new_owner": player.to_short(),
+                        }
+                        if old_owner_short:
+                            hp_like["old_owner"] = old_owner_short
+                        await self._deliver_harem_purchase_event(
+                            purchase_table_id=str(player.table_id or ""),
+                            payload=hp_like,
+                            buyer=player,
+                            displaced_db_id=displaced_owner,
+                        )
 
                 # Stol uchastniklariga ham eski-uy uchun update_user yuboramiz
                 if live_target and live_target.table_id:
@@ -5104,10 +5223,18 @@ class GameManager:
             bonus = int(cfg.get("bonus", 20))
             if shared:
                 bonus *= 2
-            await self._give_hearts(
-                player, bonus, f"achievement:{key}:L{next_claim}", save_to_db=True
+            tx_type = f"achievement:{key}:L{next_claim}"
+            credited = await self._credit_wallet_hearts(
+                player, bonus, tx_type, description=tx_type
             )
-            player.achievements_bonus_claimed[key] = next_claim
+            if not credited:
+                log.error(
+                    "claim_achievement_bonus: hearts DB yozilmadi id=%s user=%s bonus=%d",
+                    key,
+                    player.username,
+                    bonus,
+                )
+                return
             try:
                 async with self._db() as repo:
                     await repo.set_user_achievement_bonus_claimed(
@@ -5115,6 +5242,8 @@ class GameManager:
                     )
             except Exception as e:
                 log.error("achievement bonus claimed persist: %s", e)
+                return
+            player.achievements_bonus_claimed[key] = next_claim
             log.info(
                 "ACHIEVEMENT claim: %s id=%s bonus=%d shared=%s level=%s/%s",
                 player.username,
@@ -5581,14 +5710,33 @@ class GameManager:
     def _is_dynamite_blocked(player: Player) -> bool:
         return str(getattr(player, "drink", "") or "").lower() == DYNAMITE_DRINK_TYPE
 
-    async def _reject_if_dynamite(self, player: Player) -> bool:
+    async def _reject_if_dynamite(self, player: Player, *, scope: str = "chat") -> bool:
+        """scope: chat — SMS/yozuv; music — DJ qo'shiq (cz/mv/yt)."""
         if not self._is_dynamite_blocked(player):
             return False
+        reason = "dont_music" if scope == "music" else "dynamite"
         await self.send_to(
             player,
-            {"type": "block_message", "reason": "dynamite", "ts": self._ts()},
+            {"type": "block_message", "reason": reason, "ts": self._ts()},
         )
         return True
+
+    async def _stop_table_music_if_player_is_sender(
+        self, table: Table, player: Player
+    ) -> None:
+        """Dinamit: qurbon hozir DJ bo'lsa — stol musiqasini to'xtatish."""
+        music = table.current_music
+        if not music:
+            return
+        sender = music.get("sender") or music.get("user") or {}
+        sid = str(sender.get("id") or sender.get("uid") or "")
+        if sid != str(player.id):
+            return
+        task = getattr(table, "_music_clear_task", None)
+        if task is not None and not task.done():
+            task.cancel()
+        table._music_clear_task = None
+        table.current_music = None
 
     @staticmethod
     def _is_bomb_gift(gift_type: str) -> bool:
@@ -5601,6 +5749,44 @@ class GameManager:
         player.drink = ""
         player.drink_random = 0
         return True
+
+    async def _wipe_dynamite_victim_chat(self, table: Table, victim: Player) -> None:
+        """Dinamit: qurbonning shu stoldagi barcha chat/SMS yozuvlari (DB + UI)."""
+        uid_ws = str(victim.id or "").strip()
+        uid_db = (
+            str(victim.db_id).strip()
+            if getattr(victim, "db_id", None)
+            else ""
+        )
+        persist_ids: list[str] = []
+        for u in (uid_ws, uid_db):
+            if u and u not in persist_ids:
+                persist_ids.append(u)
+
+        table_key = str(table.table_id)
+        if self._db_factory and table_key.isdigit() and persist_ids:
+            try:
+                async with self._db() as repo:
+                    n = await repo.delete_table_chat_messages_for_user(
+                        int(table_key), persist_ids
+                    )
+                log.info(
+                    "dynamite chat wipe table=%s victim=%s deleted=%d",
+                    table_key,
+                    victim.username,
+                    n,
+                )
+            except Exception as e:
+                log.error("dynamite chat wipe DB: %s", e)
+
+        delete_payload = {
+            "type": "game_chat_delete_last",
+            "ts": self._ts(),
+        }
+        for uid in persist_ids:
+            payload = {**delete_payload, "user_id": uid}
+            await self.broadcast(table_key, payload)
+            await self.send_to(victim, payload)
 
     @staticmethod
     def _is_gift_love(gift_type: str, gift_raw: str = "") -> bool:
@@ -6707,15 +6893,15 @@ class GameManager:
         )
 
     async def _handle_translate(self, player: Player, data: dict):
-        from src.app.core.language import normalize_lang
+        from src.app.core.language import resolve_translate_target_lang
         from src.app.services.google_translate import translate_text
 
         text = str(data.get("text") or "").strip()
         req_id = data.get("req_id", 0)
-        target = normalize_lang(
-            data.get("lang")
-            or getattr(player, "language", None)
-            or (getattr(player, "locale", None) or "")[:2]
+        target = resolve_translate_target_lang(
+            request_lang=data.get("lang"),
+            player_locale=getattr(player, "locale", None),
+            player_language=getattr(player, "language", None),
         )
         ttext = await translate_text(text, target_lang=target)
         await self.send_to(
