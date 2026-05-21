@@ -7,7 +7,8 @@ from pathlib import Path
 
 from src.app.core.language import DEFAULT_LANG, normalize_lang
 
-LOCALES_DIR = Path(__file__).resolve().parents[1] / "locales"
+# src/app/locales (bot/i18n/ -> app/)
+LOCALES_DIR = Path(__file__).resolve().parents[2] / "locales"
 _DOMAIN = "bot"
 
 _locale_ctx: ContextVar[str] = ContextVar("bot_locale", default=DEFAULT_LANG)

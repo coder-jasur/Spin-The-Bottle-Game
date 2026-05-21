@@ -269,6 +269,18 @@ msgstr "⚠️ Yes, replace all"
 msgid "Cancelled."
 msgstr "Cancelled."
 
+msgid "📣 Broadcast to all users"
+msgstr "📣 Broadcast to all users"
+
+msgid "📣 <b>Broadcast</b>\n\nChoose:"
+msgstr "📣 <b>Broadcast</b>\n\nChoose:"
+
+msgid "✉️ New broadcast"
+msgstr "✉️ New broadcast"
+
+msgid "ℹ️ Personalization help"
+msgstr "ℹ️ Personalization help"
+
 msgid "🤝 Referral & partners"
 msgstr "🤝 Referral & partners"
 

@@ -16,11 +16,8 @@ from aiogram.types import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.app.bot.handlers.admin_panel import (
-    _apply_admin_locale,
-    _deny_if_not_admin,
-    _panel_keyboard,
-)
+from src.app.bot.handlers.admin.common import apply_admin_locale, deny_if_not_admin
+from src.app.bot.handlers.admin.panel import PANEL_TITLE_MSGID, panel_keyboard
 from src.app.bot.i18n import _
 from src.app.database.repositories.referral import ReferralRepository
 from src.app.database.repositories.user import UserRepository
@@ -188,11 +185,11 @@ def _partner_display_name(partner) -> str:
 async def open_referral_menu(
     cb: CallbackQuery, session: AsyncSession, state: FSMContext
 ) -> None:
-    if await _deny_if_not_admin(cb, session):
+    if await deny_if_not_admin(cb, session):
         return
     if not cb.message or not cb.from_user:
         return
-    await _apply_admin_locale(session, cb.from_user.id)
+    await apply_admin_locale(session, cb.from_user.id)
     await state.clear()
     await cb.answer()
     await _show_referral_menu(cb.message)
@@ -202,11 +199,11 @@ async def open_referral_menu(
 async def back_referral_menu(
     cb: CallbackQuery, session: AsyncSession, state: FSMContext
 ) -> None:
-    if await _deny_if_not_admin(cb, session):
+    if await deny_if_not_admin(cb, session):
         return
     if not cb.message or not cb.from_user:
         return
-    await _apply_admin_locale(session, cb.from_user.id)
+    await apply_admin_locale(session, cb.from_user.id)
     await state.clear()
     await cb.answer()
     await _show_referral_menu(cb.message)
@@ -216,27 +213,25 @@ async def back_referral_menu(
 async def back_admin_panel(
     cb: CallbackQuery, session: AsyncSession, state: FSMContext
 ) -> None:
-    if await _deny_if_not_admin(cb, session):
+    if await deny_if_not_admin(cb, session):
         return
     if not cb.message or not cb.from_user:
         return
-    await _apply_admin_locale(session, cb.from_user.id)
+    await apply_admin_locale(session, cb.from_user.id)
     await state.clear()
     await cb.answer()
-    from src.app.bot.handlers.admin_panel import _PANEL_TITLE_MSGID
-
-    await cb.message.answer(_(_PANEL_TITLE_MSGID), reply_markup=_panel_keyboard())
+    await cb.message.answer(_(PANEL_TITLE_MSGID), reply_markup=panel_keyboard())
 
 
 @router.callback_query(F.data == _CB_CANCEL)
 async def on_cancel(
     cb: CallbackQuery, session: AsyncSession, state: FSMContext
 ) -> None:
-    if await _deny_if_not_admin(cb, session):
+    if await deny_if_not_admin(cb, session):
         return
     if not cb.message or not cb.from_user:
         return
-    await _apply_admin_locale(session, cb.from_user.id)
+    await apply_admin_locale(session, cb.from_user.id)
     await state.clear()
     await cb.answer()
     await _show_referral_menu(cb.message)
@@ -244,11 +239,11 @@ async def on_cancel(
 
 @router.callback_query(F.data == _CB_LIST)
 async def list_partners(cb: CallbackQuery, session: AsyncSession) -> None:
-    if await _deny_if_not_admin(cb, session):
+    if await deny_if_not_admin(cb, session):
         return
     if not cb.message or not cb.from_user:
         return
-    await _apply_admin_locale(session, cb.from_user.id)
+    await apply_admin_locale(session, cb.from_user.id)
     await cb.answer()
     repo = ReferralRepository(session)
     partners = await repo.list_partners()
@@ -289,11 +284,11 @@ async def list_partners(cb: CallbackQuery, session: AsyncSession) -> None:
 
 @router.callback_query(F.data.startswith("admref:p:"))
 async def partner_detail(cb: CallbackQuery, session: AsyncSession) -> None:
-    if await _deny_if_not_admin(cb, session):
+    if await deny_if_not_admin(cb, session):
         return
     if not cb.message or not cb.from_user:
         return
-    await _apply_admin_locale(session, cb.from_user.id)
+    await apply_admin_locale(session, cb.from_user.id)
     await cb.answer()
     pk = int(cb.data.split(":")[-1])
     repo = ReferralRepository(session)
@@ -323,11 +318,11 @@ async def partner_detail(cb: CallbackQuery, session: AsyncSession) -> None:
 
 @router.callback_query(F.data == _CB_SETTINGS)
 async def show_settings(cb: CallbackQuery, session: AsyncSession) -> None:
-    if await _deny_if_not_admin(cb, session):
+    if await deny_if_not_admin(cb, session):
         return
     if not cb.message or not cb.from_user:
         return
-    await _apply_admin_locale(session, cb.from_user.id)
+    await apply_admin_locale(session, cb.from_user.id)
     await cb.answer()
     repo = ReferralRepository(session)
     s = await repo.get_default_settings()
@@ -341,11 +336,11 @@ async def show_settings(cb: CallbackQuery, session: AsyncSession) -> None:
 async def add_partner_start(
     cb: CallbackQuery, session: AsyncSession, state: FSMContext
 ) -> None:
-    if await _deny_if_not_admin(cb, session):
+    if await deny_if_not_admin(cb, session):
         return
     if not cb.message or not cb.from_user:
         return
-    await _apply_admin_locale(session, cb.from_user.id)
+    await apply_admin_locale(session, cb.from_user.id)
     await state.set_state(AdminReferralState.add_user)
     await cb.answer()
     await cb.message.answer(
@@ -357,9 +352,9 @@ async def add_partner_start(
 async def add_partner_user(
     message: Message, session: AsyncSession, state: FSMContext
 ) -> None:
-    if not message.from_user or await _deny_if_not_admin(message, session):
+    if not message.from_user or await deny_if_not_admin(message, session):
         return
-    await _apply_admin_locale(session, message.from_user.id)
+    await apply_admin_locale(session, message.from_user.id)
     raw = (message.text or "").strip()
     user_repo = UserRepository(session)
     user = None
@@ -382,9 +377,9 @@ async def add_partner_user(
 async def add_partner_code(
     message: Message, session: AsyncSession, state: FSMContext
 ) -> None:
-    if not message.from_user or await _deny_if_not_admin(message, session):
+    if not message.from_user or await deny_if_not_admin(message, session):
         return
-    await _apply_admin_locale(session, message.from_user.id)
+    await apply_admin_locale(session, message.from_user.id)
     data = await state.get_data()
     raw = (message.text or "").strip()
     code = data.get("default_code") or ""
@@ -402,9 +397,9 @@ async def add_partner_code(
 async def add_partner_bonus(
     message: Message, session: AsyncSession, state: FSMContext
 ) -> None:
-    if not message.from_user or await _deny_if_not_admin(message, session):
+    if not message.from_user or await deny_if_not_admin(message, session):
         return
-    await _apply_admin_locale(session, message.from_user.id)
+    await apply_admin_locale(session, message.from_user.id)
     try:
         bonus = int(re.sub(r"\s+", "", message.text or ""))
     except ValueError:
@@ -419,9 +414,9 @@ async def add_partner_bonus(
 async def add_partner_limit(
     message: Message, session: AsyncSession, state: FSMContext
 ) -> None:
-    if not message.from_user or await _deny_if_not_admin(message, session):
+    if not message.from_user or await deny_if_not_admin(message, session):
         return
-    await _apply_admin_locale(session, message.from_user.id)
+    await apply_admin_locale(session, message.from_user.id)
     try:
         limit = int(re.sub(r"\s+", "", message.text or ""))
     except ValueError:
@@ -463,11 +458,11 @@ async def add_partner_limit(
 async def edit_partner_bonus_start(
     cb: CallbackQuery, session: AsyncSession, state: FSMContext
 ) -> None:
-    if await _deny_if_not_admin(cb, session):
+    if await deny_if_not_admin(cb, session):
         return
     if not cb.message or not cb.from_user:
         return
-    await _apply_admin_locale(session, cb.from_user.id)
+    await apply_admin_locale(session, cb.from_user.id)
     pk = int(cb.data.split(":")[-1])
     await state.set_state(AdminReferralState.edit_bonus)
     await state.update_data(partner_pk=pk)
@@ -479,11 +474,11 @@ async def edit_partner_bonus_start(
 async def edit_partner_limit_start(
     cb: CallbackQuery, session: AsyncSession, state: FSMContext
 ) -> None:
-    if await _deny_if_not_admin(cb, session):
+    if await deny_if_not_admin(cb, session):
         return
     if not cb.message or not cb.from_user:
         return
-    await _apply_admin_locale(session, cb.from_user.id)
+    await apply_admin_locale(session, cb.from_user.id)
     pk = int(cb.data.split(":")[-1])
     await state.set_state(AdminReferralState.edit_limit)
     await state.update_data(partner_pk=pk)
@@ -495,11 +490,11 @@ async def edit_partner_limit_start(
 async def toggle_partner(
     cb: CallbackQuery, session: AsyncSession
 ) -> None:
-    if await _deny_if_not_admin(cb, session):
+    if await deny_if_not_admin(cb, session):
         return
     if not cb.message or not cb.from_user:
         return
-    await _apply_admin_locale(session, cb.from_user.id)
+    await apply_admin_locale(session, cb.from_user.id)
     pk = int(cb.data.split(":")[-1])
     repo = ReferralRepository(session)
     partners = {p.id: p for p in await repo.list_partners()}
@@ -537,9 +532,9 @@ async def toggle_partner(
 async def edit_partner_bonus_save(
     message: Message, session: AsyncSession, state: FSMContext
 ) -> None:
-    if not message.from_user or await _deny_if_not_admin(message, session):
+    if not message.from_user or await deny_if_not_admin(message, session):
         return
-    await _apply_admin_locale(session, message.from_user.id)
+    await apply_admin_locale(session, message.from_user.id)
     data = await state.get_data()
     try:
         bonus = int(re.sub(r"\s+", "", message.text or ""))
@@ -557,9 +552,9 @@ async def edit_partner_bonus_save(
 async def edit_partner_limit_save(
     message: Message, session: AsyncSession, state: FSMContext
 ) -> None:
-    if not message.from_user or await _deny_if_not_admin(message, session):
+    if not message.from_user or await deny_if_not_admin(message, session):
         return
-    await _apply_admin_locale(session, message.from_user.id)
+    await apply_admin_locale(session, message.from_user.id)
     data = await state.get_data()
     try:
         limit = int(re.sub(r"\s+", "", message.text or ""))
@@ -577,11 +572,11 @@ async def edit_partner_limit_save(
 async def settings_bonus_start(
     cb: CallbackQuery, session: AsyncSession, state: FSMContext
 ) -> None:
-    if await _deny_if_not_admin(cb, session):
+    if await deny_if_not_admin(cb, session):
         return
     if not cb.message or not cb.from_user:
         return
-    await _apply_admin_locale(session, cb.from_user.id)
+    await apply_admin_locale(session, cb.from_user.id)
     await state.set_state(AdminReferralState.settings_bonus)
     await cb.answer()
     await cb.message.answer(_(_PROMPT_BONUS_MSGID))
@@ -591,11 +586,11 @@ async def settings_bonus_start(
 async def settings_limit_start(
     cb: CallbackQuery, session: AsyncSession, state: FSMContext
 ) -> None:
-    if await _deny_if_not_admin(cb, session):
+    if await deny_if_not_admin(cb, session):
         return
     if not cb.message or not cb.from_user:
         return
-    await _apply_admin_locale(session, cb.from_user.id)
+    await apply_admin_locale(session, cb.from_user.id)
     await state.set_state(AdminReferralState.settings_limit)
     await cb.answer()
     await cb.message.answer(_(_PROMPT_LIMIT_MSGID))
@@ -605,9 +600,9 @@ async def settings_limit_start(
 async def settings_bonus_save(
     message: Message, session: AsyncSession, state: FSMContext
 ) -> None:
-    if not message.from_user or await _deny_if_not_admin(message, session):
+    if not message.from_user or await deny_if_not_admin(message, session):
         return
-    await _apply_admin_locale(session, message.from_user.id)
+    await apply_admin_locale(session, message.from_user.id)
     try:
         bonus = int(re.sub(r"\s+", "", message.text or ""))
     except ValueError:
@@ -624,9 +619,9 @@ async def settings_bonus_save(
 async def settings_limit_save(
     message: Message, session: AsyncSession, state: FSMContext
 ) -> None:
-    if not message.from_user or await _deny_if_not_admin(message, session):
+    if not message.from_user or await deny_if_not_admin(message, session):
         return
-    await _apply_admin_locale(session, message.from_user.id)
+    await apply_admin_locale(session, message.from_user.id)
     try:
         limit = int(re.sub(r"\s+", "", message.text or ""))
     except ValueError:

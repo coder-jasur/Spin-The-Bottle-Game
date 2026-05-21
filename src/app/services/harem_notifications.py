@@ -7,7 +7,7 @@ from aiogram.exceptions import TelegramForbiddenError
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 from src.app.api.auth.user_payload import game_display_name
-from src.app.bot.i18n import translate
+from src.app.bot.i18n.core import translate
 from src.app.bot.miniapp_url import miniapp_index_url
 from src.app.bot.telegram_safe import is_bot_blocked_by_user, log_bot_blocked
 from src.app.core.config import load_config

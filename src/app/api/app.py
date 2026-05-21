@@ -175,6 +175,17 @@ async def startup_application(
             from src.app.bot.commands import register_bot_commands, refresh_admin_commands_for_chat
 
             bot, dp = create_bot_and_dispatcher(settings, db.session_factory)
+            try:
+                from src.app.bot.handlers.admin import panel_keyboard
+
+                _n = len(panel_keyboard().inline_keyboard)
+                print(
+                    f"[OK] Admin panel: {_n} tugma "
+                    f"(broadcast={'yoq' if _n < 4 else 'ha'})",
+                    flush=True,
+                )
+            except Exception as e:
+                print(f"[WARN] Admin panel tekshiruvi: {e}", flush=True)
             app.state.bot = bot
             app.state.dp = dp
             set_telegram_bot(bot)

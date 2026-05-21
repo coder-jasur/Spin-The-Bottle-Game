@@ -406,7 +406,11 @@ class UserRepository:
 
         while True:
             # We construct a custom get_user_ids_batch to filter VIPs
-            stmt = select(User.tg_id).order_by(User.tg_id)
+            stmt = (
+                select(User.tg_id)
+                .where(User.tg_id.isnot(None))
+                .order_by(User.tg_id)
+            )
             if exclude_vip:
                 stmt = stmt.where(
                     (User.vip_status == False) | (User.vip_status.is_(None))

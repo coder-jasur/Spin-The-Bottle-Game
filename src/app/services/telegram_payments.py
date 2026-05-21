@@ -14,7 +14,7 @@ from aiogram.exceptions import TelegramForbiddenError
 from aiogram.types import FSInputFile, LabeledPrice
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.app.bot.i18n import get_locale, translate
+from src.app.bot.i18n.core import get_locale, translate
 from src.app.bot.telegram_safe import is_bot_blocked_by_user, log_bot_blocked
 from src.app.core.config import Settings, load_config
 from src.app.database.repositories.game import GameRepository

@@ -270,6 +270,18 @@ msgstr "⚠️ Да, заменить всё"
 msgid "Cancelled."
 msgstr "Отменено."
 
+msgid "📣 Broadcast to all users"
+msgstr "📣 Рассылка всем пользователям"
+
+msgid "📣 <b>Broadcast</b>\n\nChoose:"
+msgstr "📣 <b>Рассылка</b>\n\nВыберите:"
+
+msgid "✉️ New broadcast"
+msgstr "✉️ Новая рассылка"
+
+msgid "ℹ️ Personalization help"
+msgstr "ℹ️ Персонализация"
+
 msgid "🤝 Referral & partners"
 msgstr "🤝 Рефералы и партнёры"
 

@@ -19,10 +19,9 @@ from aiogram.types import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.app.bot.admin_access import get_user_by_telegram_id, is_telegram_admin
 from src.app.bot.commands import refresh_admin_commands_for_chat
-from src.app.bot.i18n import _, get_locale, set_locale
-from src.app.core.language import bot_lang_from_db_user
+from src.app.bot.handlers.admin.common import apply_admin_locale, deny_if_not_admin
+from src.app.bot.i18n import _, get_locale
 from src.app.database.backup_restore import (
     backup_filename,
     dump_backup_bytes,
@@ -37,6 +36,7 @@ router = Router(name="admin_panel")
 
 _CB_BACKUP = "adm:backup"
 _CB_REFERRAL = "adm:referral"
+_CB_BROADCAST = "adm:broadcast"
 _CB_RESTORE = "adm:restore"
 _CB_MERGE = "adm:merge"
 _CB_FULL = "adm:full"
@@ -46,7 +46,7 @@ _PANEL_TITLE_MSGID = "🛠 <b>Admin panel</b>\n\nChoose an action:"
 _BTN_BACKUP_MSGID = "📥 Create DB backup"
 _BTN_RESTORE_MSGID = "📤 Restore from backup"
 _BTN_REFERRAL_MSGID = "🤝 Referral & partners"
-_ACCESS_DENIED_MSGID = "⛔ Access denied."
+_BTN_BROADCAST_MSGID = "📣 Broadcast to all users"
 _BACKUP_WORKING_MSGID = "⏳ Creating backup, please wait…"
 _BACKUP_DONE_MSGID = (
     "✅ Backup ready.\nTables: <b>%(tables)s</b>\nRows: <b>%(rows)s</b>"
@@ -98,6 +98,11 @@ def _panel_keyboard() -> InlineKeyboardMarkup:
                     text=_(_BTN_REFERRAL_MSGID), callback_data=_CB_REFERRAL
                 )
             ],
+            [
+                InlineKeyboardButton(
+                    text=_(_BTN_BROADCAST_MSGID), callback_data=_CB_BROADCAST
+                )
+            ],
         ]
     )
 
@@ -141,36 +146,20 @@ def _full_confirm_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-async def _apply_admin_locale(session: AsyncSession, tg_id: int) -> None:
-    user = await get_user_by_telegram_id(session, tg_id)
-    set_locale(bot_lang_from_db_user(user))
-
-
-async def _deny_if_not_admin(
-    event: Message | CallbackQuery, session: AsyncSession
-) -> bool:
-    tg_user = event.from_user
-    if not tg_user or not await is_telegram_admin(session, tg_user.id):
-        text = _(_ACCESS_DENIED_MSGID)
-        if isinstance(event, Message):
-            await event.answer(text)
-        else:
-            await event.answer(text, show_alert=True)
-        return True
-    return False
-
-
 async def _show_panel(message: Message) -> None:
     await message.answer(_(_PANEL_TITLE_MSGID), reply_markup=_panel_keyboard())
 
 
 @router.message(Command("admin_panel"))
-async def cmd_admin_panel(message: Message, session: AsyncSession) -> None:
+async def cmd_admin_panel(
+    message: Message, session: AsyncSession, state: FSMContext
+) -> None:
     if not message.from_user:
         return
-    if await _deny_if_not_admin(message, session):
+    if await deny_if_not_admin(message, session):
         return
-    await _apply_admin_locale(session, message.from_user.id)
+    await state.clear()
+    await apply_admin_locale(session, message.from_user.id)
     try:
         await refresh_admin_commands_for_chat(
             message.bot, message.from_user.id, get_locale()
@@ -182,11 +171,11 @@ async def cmd_admin_panel(message: Message, session: AsyncSession) -> None:
 
 @router.callback_query(F.data == _CB_BACKUP)
 async def on_backup(cb: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
-    if await _deny_if_not_admin(cb, session):
+    if await deny_if_not_admin(cb, session):
         return
     if not cb.message or not cb.from_user:
         return
-    await _apply_admin_locale(session, cb.from_user.id)
+    await apply_admin_locale(session, cb.from_user.id)
     await state.clear()
     await cb.answer()
     await cb.message.answer(_(_BACKUP_WORKING_MSGID))
@@ -213,11 +202,11 @@ async def on_backup(cb: CallbackQuery, session: AsyncSession, state: FSMContext)
 async def on_restore_start(
     cb: CallbackQuery, session: AsyncSession, state: FSMContext
 ) -> None:
-    if await _deny_if_not_admin(cb, session):
+    if await deny_if_not_admin(cb, session):
         return
     if not cb.message or not cb.from_user:
         return
-    await _apply_admin_locale(session, cb.from_user.id)
+    await apply_admin_locale(session, cb.from_user.id)
     await state.set_state(AdminRestoreState.waiting_file)
     await cb.answer()
     await cb.message.answer(_(_RESTORE_PROMPT_MSGID))
@@ -227,9 +216,9 @@ async def on_restore_start(
 async def on_restore_file(
     message: Message, session: AsyncSession, state: FSMContext
 ) -> None:
-    if not message.from_user or await _deny_if_not_admin(message, session):
+    if not message.from_user or await deny_if_not_admin(message, session):
         return
-    await _apply_admin_locale(session, message.from_user.id)
+    await apply_admin_locale(session, message.from_user.id)
     doc = message.document
     if not doc:
         return
@@ -277,11 +266,11 @@ async def on_restore_file(
 async def on_restore_mode(
     cb: CallbackQuery, session: AsyncSession, state: FSMContext
 ) -> None:
-    if await _deny_if_not_admin(cb, session):
+    if await deny_if_not_admin(cb, session):
         return
     if not cb.message or not cb.from_user:
         return
-    await _apply_admin_locale(session, cb.from_user.id)
+    await apply_admin_locale(session, cb.from_user.id)
     data = await state.get_data()
     path = data.get("backup_path")
     if cb.data == _CB_CANCEL:
@@ -338,8 +327,15 @@ def _cleanup_temp(path: str | None) -> None:
 async def on_restore_waiting_non_document(
     message: Message, session: AsyncSession
 ) -> None:
-    if await _deny_if_not_admin(message, session):
+    if await deny_if_not_admin(message, session):
         return
     if message.from_user:
-        await _apply_admin_locale(session, message.from_user.id)
+        await apply_admin_locale(session, message.from_user.id)
     await message.answer(_(_RESTORE_PROMPT_MSGID))
+
+
+PANEL_TITLE_MSGID = _PANEL_TITLE_MSGID
+
+
+def panel_keyboard() -> InlineKeyboardMarkup:
+    return _panel_keyboard()

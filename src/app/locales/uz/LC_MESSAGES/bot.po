@@ -272,6 +272,18 @@ msgstr "⚠️ Ha, hammasini almashtirish"
 msgid "Cancelled."
 msgstr "Bekor qilindi."
 
+msgid "📣 Broadcast to all users"
+msgstr "📣 Barcha foydalanuvchilarga xabar"
+
+msgid "📣 <b>Broadcast</b>\n\nChoose:"
+msgstr "📣 <b>Broadcast</b>\n\nTanlang:"
+
+msgid "✉️ New broadcast"
+msgstr "✉️ Yangi xabar yuborish"
+
+msgid "ℹ️ Personalization help"
+msgstr "ℹ️ Shaxsiylashtirish"
+
 msgid "🤝 Referral & partners"
 msgstr "🤝 Referal va hamkorlar"
 
